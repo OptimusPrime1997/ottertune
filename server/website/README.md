@@ -65,8 +65,8 @@ python manage.py createsuperuser
 
 ```
 sudo rabbitmq-server -detached
-python manage.py celery worker --loglevel=info --pool=threads
-python manage.py runserver 0.0.0.0:8000
-python manage.py celerybeat --verbosity=2 --loglevel=info 
+sudo python manage.py celery worker --loglevel=info --pool=threads
+sudo python manage.py runserver 0.0.0.0:8000
+sudo python manage.py celerybeat --verbosity=2 --loglevel=info 
 
 ```
