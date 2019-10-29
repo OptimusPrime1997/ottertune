@@ -15,18 +15,19 @@ SETTINGSPATH=$REPOPATH/server/website/website/settings
 
 # Install Ubuntu packages
 echo -e "\n--- Installing Ubuntu packages ---\n"
-apt-get -qq update
-apt-get -y install python3-pip python-dev python-mysqldb rabbitmq-server gradle default-jdk libmysqlclient-dev python3-tk >> $LOG 2>&1
+sudo apt-get -qq update
+# apt-get -y install python3-pip python-dev python-mysqldb rabbitmq-server   gradle default-jdk   libmysqlclient-dev python3-tk >> $LOG 2>&1
+sudo apt-get -y install python3-pip python-dev python-mysqldb rabbitmq-server  openjdk-8-jdk  libmysqlclient-dev python3-tk >> $LOG 2>&1
 
 echo -e "\n--- Installing Python packages ---\n"
-pip3 install --upgrade pip >> $LOG 2>&1
-pip install -r ${REPOPATH}/server/website/requirements.txt >> $LOG 2>&1
+sudo pip3 install --upgrade pip >> $LOG 2>&1
+sudo pip install -r ${REPOPATH}/server/website/requirements.txt >> $LOG 2>&1
 
 # Install MySQL
 echo -e "\n--- Install MySQL specific packages and settings ---\n"
 debconf-set-selections <<< "mysql-server mysql-server/root_password password $DBPASSWD"
 debconf-set-selections <<< "mysql-server mysql-server/root_password_again password $DBPASSWD"
-apt-get -y install mysql-server >> $LOG 2>&1
+sudo apt-get -y install mysql-server >> $LOG 2>&1
 
 # Setup MySQL
 echo -e "\n--- Setting up the MySQL user and database ---\n"
@@ -44,5 +45,6 @@ if [ ! -f "$SETTINGSPATH/credentials.py" ]; then
         -e "s/'PASSWORD': 'ADD ME\!\!'/'PASSWORD': '$DBPASSWD'/" \
         $SETTINGSPATH/credentials.py >> $LOG 2>&1
 fi
-rm /usr/bin/python
-ln -s /usr/bin/python3.5 /usr/bin/python
+sudo rm /usr/bin/python
+# ln -s /usr/bin/python3.5 /usr/bin/python
+sudo ln -s /usr/bin/python3.6 /usr/bin/python

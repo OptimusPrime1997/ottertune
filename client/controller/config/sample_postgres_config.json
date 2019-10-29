@@ -1,9 +1,8 @@
 {
-  "database_type" : "postgres",
-  "database_url" : "jdbc:postgresql://localhost:5432/postgres",
-  "username" : "MY_DATABASE_USERNAME",
-  "password" : "MY_DATABASE_PASSWORD",
-  "upload_code" : "DEPRECATED",
-  "upload_url" : "DEPRECATED",
-  "workload_name" : "workload_name"
+  "database_type": "postgres",
+  "database_url": "jdbc:postgresql://localhost:5432/tpcc",
+  "username": "postgres",
+  "password": "test123",
+  "upload_code": "8UNTR9B2QZOQL415IFBK",
+  "workload_name": "delta_postgres96"
 }
