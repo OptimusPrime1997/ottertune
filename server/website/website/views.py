@@ -151,7 +151,8 @@ def create_or_edit_project(request, project_id=''):
             project.last_update = ts
             project.save()
         else:
-            project = get_object_or_404(Project, pk=project_id, user=request.user)
+            project = get_object_or_404(
+                Project, pk=project_id, user=request.user)
             form = ProjectForm(request.POST, instance=project)
             if not form.is_valid():
                 return render(request, 'edit_project.html', {'form': form})
@@ -237,8 +238,10 @@ def session_view(request, project_id, session_id):
         default_workload = 'show_none'
         default_confs = 'none'
 
-    default_metrics = MetricCatalog.objects.get_default_metrics(session.target_objective)
-    metric_meta = MetricCatalog.objects.get_metric_meta(session.dbms, session.target_objective)
+    default_metrics = MetricCatalog.objects.get_default_metrics(
+        session.target_objective)
+    metric_meta = MetricCatalog.objects.get_metric_meta(
+        session.dbms, session.target_objective)
 
     knobs = SessionKnob.objects.get_knobs_for_session(session)
     knob_names = [knob["name"] for knob in knobs if knob["tunable"]]
@@ -338,16 +341,19 @@ def edit_knobs(request, project_id, session_id):
         instance.session = session
         instance.knob = KnobCatalog.objects.filter(dbms=session.dbms,
                                                    name=form.cleaned_data["name"])[0]
-        SessionKnob.objects.filter(session=instance.session, knob=instance.knob).delete()
+        SessionKnob.objects.filter(
+            session=instance.session, knob=instance.knob).delete()
         instance.save()
         return HttpResponse(status=204)
     else:
-        knobs = KnobCatalog.objects.filter(dbms=session.dbms).order_by('-tunable')
+        knobs = KnobCatalog.objects.filter(
+            dbms=session.dbms).order_by('-tunable')
         forms = []
         for knob in knobs:
             knob_values = model_to_dict(knob)
             if SessionKnob.objects.filter(session=session, knob=knob).exists():
-                new_knob = SessionKnob.objects.filter(session=session, knob=knob)[0]
+                new_knob = SessionKnob.objects.filter(
+                    session=session, knob=knob)[0]
                 knob_values["minval"] = new_knob.minval
                 knob_values["maxval"] = new_knob.maxval
                 knob_values["tunable"] = new_knob.tunable
@@ -374,8 +380,10 @@ def result_view(request, project_id, session_id, result_id):
     target = get_object_or_404(Result, pk=result_id)
     session = target.session
 
-    default_metrics = MetricCatalog.objects.get_default_metrics(session.target_objective)
-    metric_meta = MetricCatalog.objects.get_metric_meta(session.dbms, session.target_objective)
+    default_metrics = MetricCatalog.objects.get_default_metrics(
+        session.target_objective)
+    metric_meta = MetricCatalog.objects.get_metric_meta(
+        session.dbms, session.target_objective)
     metric_data = JSONUtil.loads(target.metric_data.data)
 
     default_metrics = {mname: metric_data[mname] * metric_meta[mname].scale
@@ -435,7 +443,8 @@ def handle_result_files(session, files):
     # Load the contents of the controller's summary file
     summary = JSONUtil.loads(files['summary'])
     dbms_type = DBMSType.type(summary['database_type'])
-    dbms_version = summary['database_version']  # TODO: fix parse_version_string
+    # TODO: fix parse_version_string
+    dbms_version = summary['database_version']
     workload_name = summary['workload_name']
     observation_time = summary['observation_time']
     start_time = datetime.fromtimestamp(
@@ -655,7 +664,8 @@ def dbms_data_view(request, context, dbms_data):
         comp_dict = JSONUtil.loads(comp_data)
         comp_featured_dict = filter_fn(dbms_id, comp_dict)
 
-        all_data = [(k, v, comp_dict[k]) for k, v in list(all_data_dict.items())]
+        all_data = [(k, v, comp_dict[k])
+                    for k, v in list(all_data_dict.items())]
         featured_data = [(k, v, comp_featured_dict[k])
                          for k, v in list(featured_dict.items())]
     else:
@@ -689,12 +699,15 @@ def workload_view(request, project_id, session_id, wkld_id):  # pylint: disable=
         if not latest_result:
             continue
         knob_conf_map[conf.name] = [conf, latest_result]
-    knob_conf_map = OrderedDict(sorted(list(knob_conf_map.items()), key=lambda x: x[1][0].pk))
+    knob_conf_map = OrderedDict(
+        sorted(list(knob_conf_map.items()), key=lambda x: x[1][0].pk))
     default_knob_confs = [c for c, _ in list(knob_conf_map.values())][:5]
     LOG.debug("default_knob_confs: %s", default_knob_confs)
 
-    metric_meta = MetricCatalog.objects.get_metric_meta(session.dbms, session.target_objective)
-    default_metrics = MetricCatalog.objects.get_default_metrics(session.target_objective)
+    metric_meta = MetricCatalog.objects.get_metric_meta(
+        session.dbms, session.target_objective)
+    default_metrics = MetricCatalog.objects.get_default_metrics(
+        session.target_objective)
 
     labels = Workload.get_labels()
     labels['title'] = 'Workload Information'
@@ -715,7 +728,8 @@ def download_next_config(request):
     res = Result.objects.get(pk=result_id)
     response = HttpResponse(res.next_configuration,
                             content_type='text/plain')
-    response['Content-Disposition'] = 'attachment; filename=result_' + str(result_id) + '.cnf'
+    response['Content-Disposition'] = 'attachment; filename=result_' + \
+        str(result_id) + '.cnf'
     return response
 
 
@@ -766,9 +780,11 @@ def get_workload_data(request):
 
     results = Result.objects.filter(workload=workload)
     result_data = {r.pk: JSONUtil.loads(r.metric_data.data) for r in results}
-    results = sorted(results, key=lambda x: int(result_data[x.pk][MetricManager.THROUGHPUT]))
+    results = sorted(results, key=lambda x: int(
+        result_data[x.pk][MetricManager.THROUGHPUT]))
 
-    default_metrics = MetricCatalog.objects.get_default_metrics(session.target_objective)
+    default_metrics = MetricCatalog.objects.get_default_metrics(
+        session.target_objective)
     metrics = request.GET.get('met', ','.join(default_metrics)).split(',')
     metrics = [m for m in metrics if m != 'none']
     if len(metrics) == 0:
@@ -777,7 +793,8 @@ def get_workload_data(request):
     data_package = {'results': [],
                     'error': 'None',
                     'metrics': metrics}
-    metric_meta = MetricCatalog.objects.get_metric_meta(session.dbms, session.target_objective)
+    metric_meta = MetricCatalog.objects.get_metric_meta(
+        session.dbms, session.target_objective)
     for met in data_package['metrics']:
         met_info = metric_meta[met]
         data_package['results'].append({'data': [[]], 'tick': [],
@@ -836,9 +853,11 @@ def get_timeline_data(request):
     if session.user != request.user:
         return HttpResponse(JSONUtil.dumps(data_package), content_type='application/json')
 
-    default_metrics = MetricCatalog.objects.get_default_metrics(session.target_objective)
+    default_metrics = MetricCatalog.objects.get_default_metrics(
+        session.target_objective)
 
-    metric_meta = MetricCatalog.objects.get_metric_meta(session.dbms, session.target_objective)
+    metric_meta = MetricCatalog.objects.get_metric_meta(
+        session.dbms, session.target_objective)
     for met in default_metrics:
         met_info = metric_meta[met]
         columnnames.append(met_info.pprint + ' (' + met_info.short_unit + ')')
@@ -861,7 +880,8 @@ def get_timeline_data(request):
         if len(metrics) == 0:
             metrics = default_metrics
         workloads = [display_type]
-        workload_confs = [wc for wc in request.GET['spe'].strip().split(',') if wc != '']
+        workload_confs = [
+            wc for wc in request.GET['spe'].strip().split(',') if wc != '']
         results = [r for r in results if str(r.workload.pk) in workload_confs]
 
     metric_datas = {r.pk: JSONUtil.loads(r.metric_data.data) for r in results}
@@ -869,7 +889,8 @@ def get_timeline_data(request):
     for res in results:
         entry = [
             res.pk,
-            res.observation_end_time.astimezone(timezone(TIME_ZONE)).strftime("%Y-%m-%d %H:%M:%S"),
+            res.observation_end_time.astimezone(
+                timezone(TIME_ZONE)).strftime("%Y-%m-%d %H:%M:%S"),
             res.knob_data.name,
             res.metric_data.name,
             res.workload.name]
@@ -947,6 +968,7 @@ def get_timeline_data(request):
 
 # get the lastest result
 def give_result(request, upload_code):  # pylint: disable=unused-argument
+    LOG.info("Execute view.give_result method")
     try:
         session = Session.objects.get(upload_code=upload_code)
     except Session.DoesNotExist:
@@ -966,4 +988,8 @@ def give_result(request, upload_code):  # pylint: disable=unused-argument
 
     # success
     res = Result.objects.get(pk=lastest_result.pk)
+    LOG.info("Get Result:", res)
+    next_conf = res.next_configuration
+    json_next_conf = JSONUtil.dumps(next_conf)
+    LOG.info("Get next conf:", json_next_conf)
     return HttpResponse(JSONUtil.dumps(res.next_configuration), content_type='application/json')

@@ -4,6 +4,5 @@
   "username": "postgres",
   "password": "test123",
   "upload_code": "8UNTR9B2QZOQL415IFBK",
-  "upload_url": "http://127.0.0.1:8000",
-  "workload_name": "delta_postgres96"
+  "workload_name": "8UNTR9B2QZOQL415IFBK"
 }

@@ -10,6 +10,9 @@ Created on Sep 8, 2016
 '''
 
 import numpy as np
+from .util import get_analysis_logger
+
+LOG = get_analysis_logger(__name__)
 
 
 class ParamConstraintHelper(object):
@@ -17,7 +20,8 @@ class ParamConstraintHelper(object):
     def __init__(self, scaler, encoder=None, binary_vars=None,
                  init_flip_prob=0.3, flip_prob_decay=0.5):
         if 'inverse_transform' not in dir(scaler):
-            raise Exception("Scaler object must provide function inverse_transform(X)")
+            raise Exception(
+                "Scaler object must provide function inverse_transform(X)")
         if 'transform' not in dir(scaler):
             raise Exception("Scaler object must provide function transform(X)")
         self.scaler_ = scaler
@@ -40,7 +44,8 @@ class ParamConstraintHelper(object):
             for i, nvals in enumerate(n_values):
                 start_idx = cat_start_indices[i]
                 cvals = conv_sample[start_idx: start_idx + nvals]
-                cvals = np.array(np.arange(nvals) == np.argmax(cvals), dtype=float)
+                cvals = np.array(np.arange(nvals) ==
+                                 np.argmax(cvals), dtype=float)
                 assert np.sum(cvals) == 1
                 conv_sample[start_idx: start_idx + nvals] = cvals
 
@@ -66,9 +71,18 @@ class ParamConstraintHelper(object):
         return sample
 
     def _handle_rescaling(self, sample, rescale):
+        LOG.info("sample=", sample)
+        print("sample=", sample)
         if rescale:
             if sample.ndim == 1:
                 sample = sample.reshape(1, -1)
+                temp_scaler = self.scaler_.transform(sample)
+                LOG.info("temp_scaler=", temp_scaler)
+                print("temp_scaler=", temp_scaler)
+            # ravel convert to one dimension array
+            result=self.scaler_.transform(sample).ravel()
+            LOG.info("result=",result)
+            print("result=",result)
             return self.scaler_.transform(sample).ravel()
         return sample
 
@@ -103,7 +117,8 @@ class ParamConstraintHelper(object):
                 start_idx = cat_start_indices[i]
                 current_val = conv_sample[start_idx: start_idx + nvals]
                 assert np.all(np.logical_or(current_val == 0, current_val == 1)), \
-                    "categorical {0}: value not 0/1: {1}".format(i, current_val)
+                    "categorical {0}: value not 0/1: {1}".format(
+                        i, current_val)
                 choices = np.arange(nvals)[current_val != 1]
                 assert choices.size == nvals - 1
                 r = np.zeros(nvals)
