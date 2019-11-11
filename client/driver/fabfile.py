@@ -18,14 +18,17 @@ import glob
 from multiprocessing import Process
 from fabric.api import (env, local, task, lcd)
 from fabric.state import output as fabric_output
+import paramiko
 
+VM_IP = "192.168.122.77"
 LOG = logging.getLogger()
 LOG.setLevel(logging.DEBUG)
 Formatter = logging.Formatter(  # pylint: disable=invalid-name
     "%(asctime)s [%(levelname)s]  %(message)s")
 
 # print the log
-ConsoleHandler = logging.StreamHandler(sys.stdout)  # pylint: disable=invalid-name
+ConsoleHandler = logging.StreamHandler(
+    sys.stdout)  # pylint: disable=invalid-name
 ConsoleHandler.setFormatter(Formatter)
 LOG.addHandler(ConsoleHandler)
 
@@ -51,7 +54,8 @@ def check_disk_usage():
     disk_use = 0
     cmd = "df -h {}".format(partition)
     out = local(cmd, capture=True).splitlines()[1]
-    m = re.search('\d+(?=%)', out)  # pylint: disable=anomalous-backslash-in-string
+    m = re.search(
+        '\d+(?=%)', out)  # pylint: disable=anomalous-backslash-in-string
     if m:
         disk_use = int(m.group(0))
     LOG.info("Current Disk Usage: %s%s", disk_use, '%')
@@ -71,7 +75,8 @@ def restart_database():
     elif CONF['database_type'] == 'oracle':
         cmd = 'sh oracleScripts/shutdownOracle.sh && sh oracleScripts/startupOracle.sh'
     else:
-        raise Exception("Database Type {} Not Implemented !".format(CONF['database_type']))
+        raise Exception("Database Type {} Not Implemented !".format(
+            CONF['database_type']))
     local(cmd)
 
 
@@ -81,7 +86,8 @@ def drop_database():
         cmd = "PGPASSWORD={} dropdb -e --if-exists {} -U {}".\
               format(CONF['password'], CONF['database_name'], CONF['username'])
     else:
-        raise Exception("Database Type {} Not Implemented !".format(CONF['database_type']))
+        raise Exception("Database Type {} Not Implemented !".format(
+            CONF['database_type']))
     local(cmd)
 
 
@@ -91,7 +97,8 @@ def create_database():
         cmd = "PGPASSWORD={} createdb -e {} -U {}".\
               format(CONF['password'], CONF['database_name'], CONF['username'])
     else:
-        raise Exception("Database Type {} Not Implemented !".format(CONF['database_type']))
+        raise Exception("Database Type {} Not Implemented !".format(
+            CONF['database_type']))
     local(cmd)
 
 
@@ -122,7 +129,8 @@ def run_oltpbench():
 @task
 def run_oltpbench_bg():
     cmd = "./oltpbenchmark -b {} -c {} --execute=true -s 5 -o outputfile > {} 2>&1 &".\
-          format(CONF['oltpbench_workload'], CONF['oltpbench_config'], CONF['oltpbench_log'])
+          format(CONF['oltpbench_workload'],
+                 CONF['oltpbench_config'], CONF['oltpbench_log'])
     with lcd(CONF['oltpbench_home']):  # pylint: disable=not-context-manager
         local(cmd)
 
@@ -146,7 +154,8 @@ def signal_controller():
 @task
 def save_dbms_result():
     t = int(time.time())
-    files = ['knobs.json', 'metrics_after.json', 'metrics_before.json', 'summary.json']
+    files = ['knobs.json', 'metrics_after.json',
+             'metrics_before.json', 'summary.json']
     for f_ in files:
         f_prefix = f_.split('.')[0]
         cmd = 'cp ../controller/output/{} {}/{}__{}.json'.\
@@ -191,7 +200,8 @@ def upload_batch():
 
 @task
 def dump_database():
-    db_file_path = '{}/{}.dump'.format(CONF['database_save_path'], CONF['database_name'])
+    db_file_path = '{}/{}.dump'.format(
+        CONF['database_save_path'], CONF['database_name'])
     if os.path.exists(db_file_path):
         LOG.info('%s already exists ! ', db_file_path)
         return False
@@ -207,7 +217,8 @@ def dump_database():
                                                                        CONF['database_name'],
                                                                        db_file_path)
         else:
-            raise Exception("Database Type {} Not Implemented !".format(CONF['database_type']))
+            raise Exception("Database Type {} Not Implemented !".format(
+                CONF['database_type']))
         local(cmd)
         return True
 
@@ -220,13 +231,16 @@ def restore_database():
         # You may want to modify the username, password, and dump file name in the script
         cmd = 'sh oracleScripts/restoreOracle.sh'
     elif CONF['database_type'] == 'postgres':
-        db_file_path = '{}/{}.dump'.format(CONF['database_save_path'], CONF['database_name'])
+        db_file_path = '{}/{}.dump'.format(
+            CONF['database_save_path'], CONF['database_name'])
         drop_database()
         create_database()
         cmd = 'PGPASSWORD={} pg_restore -U {} -n public -j 8 -F c -d {} {}'.\
-              format(CONF['password'], CONF['username'], CONF['database_name'], db_file_path)
+              format(CONF['password'], CONF['username'],
+                     CONF['database_name'], db_file_path)
     else:
-        raise Exception("Database Type {} Not Implemented !".format(CONF['database_type']))
+        raise Exception("Database Type {} Not Implemented !".format(
+            CONF['database_type']))
     LOG.info('Start restoring database')
     local(cmd)
     LOG.info('Finish restoring database')
@@ -262,7 +276,8 @@ def clean_logs():
 
 @task
 def lhs_samples(count=10):
-    cmd = 'python3 lhs.py {} {} {}'.format(count, CONF['lhs_knob_path'], CONF['lhs_save_path'])
+    cmd = 'python3 lhs.py {} {} {}'.format(
+        count, CONF['lhs_knob_path'], CONF['lhs_save_path'])
     local(cmd)
 
 
@@ -400,7 +415,8 @@ def run_lhs():
         if CONF.get('oracle_awr_enabled', False):
             # create oracle AWR report for performance analysis
             if CONF['database_type'] == 'oracle':
-                local('sh oracleScripts/snapshotOracle.sh && sh oracleScripts/awrOracle.sh')
+                local(
+                    'sh oracleScripts/snapshotOracle.sh && sh oracleScripts/awrOracle.sh')
 
 
 @task
@@ -419,3 +435,47 @@ def run_loops(max_iter=1):
         LOG.info('The %s-th Loop Starts / Total Loops %s', i + 1, max_iter)
         loop()
         LOG.info('The %s-th Loop Ends / Total Loops %s', i + 1, max_iter)
+
+
+@task
+def restart_qemu():
+    LOG.info("Execute restart qemu virtual machine")
+    remove_cmd = "sudo bash ./qemuScripts/remove_mdev_device.sh"
+    local(remove_cmd)
+    pre_cmd = "sudo bash ./qemuScripts/pre_mdev.sh"
+    local(pre_cmd)
+    vm_num = 1
+    queue_num = 4
+    cpu_num = 14
+    mem_size = 4  # the unit is GB
+    start_vm_cmd = "sudo bash ./qemuScripts/start_vm_N_Q_C.sh {} {} {} {}".format(
+        vm_num, queue_num, cpu_num, mem_size)
+    local(start_vm_cmd)
+    exit
+
+
+def remote_exec(host: str, cmd: str)->None:
+    """[summary]excute command on remote server
+    Arguments:
+        host {str} -- the ip address of connnect server
+        cmd {str} -- the command to be executed
+    Returns:
+        None -- command execute result
+    """
+    # 创建SSH对象
+    LOG.info("connect to {} execute {}".format(VM_IP, cmd))
+    ssh = paramiko.SSHClient()
+    # 允许连接不在know_hosts文件中的主机
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    # 连接服务器
+    ssh.connect(hostname=host, port=22,
+                username='root', password='123')
+    # 执行命令  stdout命令结果，stderr错误
+    stdin, stdout, stderr = ssh.exec_command(cmd)
+    # 获取命令结果
+    std_r = stdout.read()
+    std_str = str(std_r, encoding="utf-8")
+    LOG.info(std_str)
+    # 关闭连接
+    ssh.close()
+    return std_str
