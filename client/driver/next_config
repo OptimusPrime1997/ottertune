@@ -1,1 +1,6 @@
-{"status": "good", "recommendation": {"backend_flush_after": "1MB", "bgwriter_delay": "4s", "bgwriter_flush_after": "1MB", "bgwriter_lru_maxpages": 79, "bgwriter_lru_multiplier": 3.852229502223634, "checkpoint_completion_target": 0.6953505016485321, "checkpoint_flush_after": "1MB", "checkpoint_timeout": "8h", "commit_delay": 10215, "commit_siblings": 203}, "info": "INFO: training data size is 3"}
+{"status": "good", "recommendation": {"bgwriter_lru_maxpages": 73, "checkpoint_completion_target": 0.7473568257273436, "checkpoint_timeout": "30min"},"qemu_parameter": {
+    "qemu_number": 1,
+    "cpu_number": 14,
+    "memory_size": "4GB",
+    "hardware_queue_number": 3
+  }, "info": "INFO: training data size is 2"}

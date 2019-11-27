@@ -1,0 +1,23 @@
+{
+  "status": "bad",
+  "info": "WARNING: no training data, the config is generated randomly",
+  "recommendation": {
+    "bgwriter_lru_maxpages": 526,
+    "checkpoint_completion_target": 0.42344811225516543,
+    "checkpoint_timeout": "10min",
+    "default_statistics_target": 1360,
+    "effective_cache_size": "9GB",
+    "max_parallel_workers_per_gather": 3,
+    "max_wal_size": "13GB",
+    "random_page_cost": 2.2698150251241622,
+    "shared_buffers": "4GB",
+    "temp_buffers": "532MB",
+    "work_mem": "234MB"
+  },
+   "qume_parameter": {
+    "qemu_number": 1,
+    "cpu_number": 14,
+    "memory_size": "4GB",
+    "hardware_queue_number": 3
+  }
+}

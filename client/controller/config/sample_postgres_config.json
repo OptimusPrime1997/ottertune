@@ -3,7 +3,7 @@
   "database_url": "jdbc:postgresql://localhost:5432/tpcc",
   "username": "postgres",
   "password": "test123",
-  "upload_code": "8UNTR9B2QZOQL415IFBK",
-  "upload_url": "http://127.0.0.1:8000",
-  "workload_name": "delta_postgres96"
+  "upload_code": "ATHY9EL5BIQT1EM5ZHEV",
+  "upload_url": "http://192.168.122.1:8000",
+  "workload_name": "vm_postgresql96"
 }

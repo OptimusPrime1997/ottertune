@@ -104,7 +104,7 @@ public class PostgresCollector extends DBCollector {
   public boolean hasMetrics() {
     return (pgMetrics.isEmpty() == false);
   }
-
+// generate json object map
   private JSONObject genMapJSONObj(Map<String, String> mapin) {
     JSONObject res = new JSONObject();
     try {
@@ -116,7 +116,7 @@ public class PostgresCollector extends DBCollector {
     }
     return res;
   }
-
+// generate local json object
   private JSONObject genLocalJSONObj(String viewName, String jsonKeyName) {
     JSONObject thisViewObj = new JSONObject();
     List<Map<String, String>> thisViewList = pgMetrics.get(viewName);
@@ -192,7 +192,7 @@ public class PostgresCollector extends DBCollector {
 
     return JSONUtil.format(stringer.toString());
   }
-
+// get metrics List<Map>
   private static List<Map<String, String>> getMetrics(ResultSet out) throws SQLException {
     ResultSetMetaData metadata = out.getMetaData();
     int numColumns = metadata.getColumnCount();
@@ -200,7 +200,7 @@ public class PostgresCollector extends DBCollector {
     for (int i = 0; i < numColumns; ++i) {
       columnNames[i] = metadata.getColumnName(i + 1).toLowerCase();
     }
-
+    
     List<Map<String, String>> metrics = new ArrayList<Map<String, String>>();
     while (out.next()) {
       Map<String, String> metricMap = new TreeMap<String, String>();

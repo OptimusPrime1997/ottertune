@@ -4,6 +4,6 @@
   "username": "dbuser",
   "password": "test123",
   "upload_code": "I5I10PXK3PK27FM86YYS",
-  "upload_url": "http://127.0.0.1:8000",
+  "upload_url": "http://192.168.122.1:8000",
   "workload_name": "mysql_tpcc"
 }

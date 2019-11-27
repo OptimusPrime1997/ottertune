@@ -23,6 +23,9 @@ from django.utils.datetime_safe import datetime
 from django.utils.timezone import now
 from django.views.decorators.csrf import csrf_exempt
 from django.forms.models import model_to_dict
+
+from django.views.decorators.csrf import csrf_protect
+
 from pytz import timezone
 
 from .forms import NewResultForm, ProjectForm, SessionForm, SessionKnobForm
@@ -88,12 +91,14 @@ def change_password_view(request):
     return render(request, 'change_password.html', token)
 
 
+@csrf_exempt
 def login_view(request):
     if request.user.is_authenticated():
         return redirect(reverse('home_projects'))
     if request.method == 'POST':
         post = request.POST
         form = AuthenticationForm(None, post)
+        LOG.info("view.login_view form= {}".format(form))
         if form.is_valid():
             login(request, form.get_user())
             return redirect(reverse('home_projects'))
@@ -104,6 +109,7 @@ def login_view(request):
     token = {}
     token.update(csrf(request))
     token['form'] = form
+    LOG.info("view.login_view={}".format(token))
     return render(request, 'login.html', token)
 
 
@@ -436,12 +442,16 @@ def new_result(request):
 
 
 def handle_result_files(session, files):
+    LOG.info("view.handle_result_files execute")
     from celery import chain
     # Combine into contiguous files
     files = {k: b''.join(v.chunks()).decode() for k, v in list(files.items())}
 
     # Load the contents of the controller's summary file
     summary = JSONUtil.loads(files['summary'])
+
+    LOG.info("Execute view.result_files funtion, summary={}".format(summary))
+
     dbms_type = DBMSType.type(summary['database_type'])
     # TODO: fix parse_version_string
     dbms_version = summary['database_version']
@@ -477,10 +487,14 @@ def handle_result_files(session, files):
                             '(actual=' + dbms.full_name + ')')
 
     # Load, process, and store the knobs in the DBMS's configuration
+    # knob_diffs是什么？
     knob_dict, knob_diffs = Parser.parse_dbms_knobs(
         dbms.pk, JSONUtil.loads(files['knobs']))
     tunable_knob_dict = Parser.convert_dbms_knobs(
         dbms.pk, knob_dict)
+    # save knobdata
+    LOG.info("tunable_knob_dict= {}".format(
+        JSONUtil.dumps(tunable_knob_dict, pprint=True, sort=True)))
     knob_data = KnobData.objects.create_knob_data(
         session, JSONUtil.dumps(knob_dict, pprint=True, sort=True),
         JSONUtil.dumps(tunable_knob_dict, pprint=True, sort=True), dbms)
@@ -498,6 +512,8 @@ def handle_result_files(session, files):
     metric_data = MetricData.objects.create_metric_data(
         session, JSONUtil.dumps(metric_dict, pprint=True, sort=True),
         JSONUtil.dumps(numeric_metric_dict, pprint=True, sort=True), dbms)
+    LOG.info("numeric_metric_dict= {}".format(
+        JSONUtil.dumps(numeric_metric_dict, pprint=True, sort=True)))
 
     # Create a new workload if this one does not already exist
     workload = Workload.objects.create_workload(
@@ -508,6 +524,7 @@ def handle_result_files(session, files):
         session, dbms, workload, knob_data, metric_data,
         start_time, end_time, observation_time)
     result.save()
+    LOG.info("saved result= {}".format(result))
 
     # Workload is now modified so backgroundTasks can make calculationw
     workload.status = WorkloadStatusType.MODIFIED
@@ -538,9 +555,10 @@ def handle_result_files(session, files):
     result_id = result.pk
     response = None
     if session.algorithm == AlgorithmType.OTTERTUNE:
+        LOG.info("views.handle_reuslt_files execute AlgorithmType.OTTERTUNE")
         response = chain(aggregate_target_results.s(result.pk),
                          map_workload.s(),
-                         configuration_recommendation.s()).apply_async()
+                         configuration_recommendation.s() ).apply_async()
     elif session.algorithm == AlgorithmType.ALGORITHM1:
         pass
     elif session.algorithm == AlgorithmType.ALGORITHM2:
@@ -548,6 +566,7 @@ def handle_result_files(session, files):
     elif session.algorithm == AlgorithmType.ALGORITHM3:
         pass
     taskmeta_ids = [response.parent.parent.id, response.parent.id, response.id]
+    LOG.info("views.handle_result_files response= {}".format(response))
     result.task_ids = ','.join(taskmeta_ids)
     result.save()
     return HttpResponse("Result stored successfully! Running tuner...(status={})  Result ID:{} "
@@ -726,6 +745,8 @@ def download_next_config(request):
     data = request.GET
     result_id = data['id']
     res = Result.objects.get(pk=result_id)
+    LOG.info("view.download_next_config next_config={}".format(
+        res.next_configuration))
     response = HttpResponse(res.next_configuration,
                             content_type='text/plain')
     response['Content-Disposition'] = 'attachment; filename=result_' + \
@@ -975,7 +996,13 @@ def give_result(request, upload_code):  # pylint: disable=unused-argument
         LOG.warning("Invalid upload code: %s", upload_code)
         return HttpResponse("Invalid upload code: " + upload_code)
     results = Result.objects.filter(session=session)
+    LOG.info("view.give_result len(results)={}".format(str(len(results))))
+    if len(results) < 1:
+        LOG.error("view.give_result len(results)={}".format(str(len(results))))
+        return HttpResponse("Result not ready")
     lastest_result = results[len(results) - 1]
+
+    LOG.info("view.give_result latest_result={}".format(lastest_result))
 
     tasks = TaskUtil.get_tasks(lastest_result.task_ids)
     overall_status, _ = TaskUtil.get_task_status(tasks)
@@ -988,8 +1015,8 @@ def give_result(request, upload_code):  # pylint: disable=unused-argument
 
     # success
     res = Result.objects.get(pk=lastest_result.pk)
-    LOG.info("Get Result:", res)
+    LOG.info("Get Result: {}".format(res))
     next_conf = res.next_configuration
     json_next_conf = JSONUtil.dumps(next_conf)
-    LOG.info("Get next conf:", json_next_conf)
+    LOG.info("Get next conf: {}".format(json_next_conf))
     return HttpResponse(JSONUtil.dumps(res.next_configuration), content_type='application/json')

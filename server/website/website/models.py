@@ -83,6 +83,9 @@ class KnobCatalog(BaseModel):
     context = models.CharField(max_length=32)
     tunable = models.BooleanField(verbose_name="tunable")
     resource = models.IntegerField(choices=KnobResourceType.choices(), default=4)
+    # ishardware=models.BooleanField(null=False,verbose_name="is hardware knobs or not",default=False)
+    
+
 
 
 MetricMeta = namedtuple('MetricMeta',

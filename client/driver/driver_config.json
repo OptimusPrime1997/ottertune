@@ -1,7 +1,7 @@
 {
   "database_type": "postgres",
   "database_name": "tpcc",
-  "database_disk": "/dev/sda2",
+  "database_disk": "/dev/nvme0n1",
   "database_conf": "/etc/postgresql/9.6/main/postgresql.conf",
   "database_save_path": "/ottertune",
   "username": "postgres",
@@ -12,10 +12,11 @@
   "oltpbench_log": "/ottertune/client/driver/oltp.log",
   "controller_config": "/ottertune/client/controller/config/sample_postgres_config.json",
   "controller_log": "/ottertune/client/driver/controller.log",
-  "save_path": "/home/ljh/results",
-  "upload_url": "http://127.0.0.1:8000",
-  "upload_code": "8UNTR9B2QZOQL415IFBK",
+  "save_path": "/ottertune/client/driver/results",
+  "upload_url": "http://192.168.122.1:8000",
+  "upload_code": "ATHY9EL5BIQT1EM5ZHEV",
   "lhs_knob_path": "/ottertune/client/driver/knobs/postgres-96.json",
   "lhs_save_path": "/ottertune/client/driver/configs",
-  "oracle_awr_enabled": false
+  "oracle_awr_enabled": false,
+  "qemu_script_path":"/ottertune/client/driver/"
 }

@@ -1,0 +1,8 @@
+{
+ "start_time": 1574160949148,
+ "end_time": 1574160959151,
+ "observation_time": 10,
+ "database_type": "postgres",
+ "database_version": "9.6",
+ "workload_name": "vm_postgresql96"
+}
