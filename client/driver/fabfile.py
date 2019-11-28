@@ -123,6 +123,19 @@ def drop_database():
 
 
 @task
+def drop_remote_database():
+    if CONF['database_type'] == 'postgres':
+        cmd = 'echo "123"|sudo -S PGPASSWORD={} dropdb\
+             -e --if-exists {} -U {}'.format(CONF['password'],
+                                             CONF['database_name'],
+                                             CONF['username'])
+    else:
+        raise Exception("Database Type {} Not Implemented !".format(
+            CONF['database_type']))
+    remote_exec(VM_IP, cmd)
+
+
+@task
 def create_database():
     if CONF['database_type'] == 'postgres':
         cmd = "PGPASSWORD={} createdb -e {} -U {}".\
@@ -131,6 +144,17 @@ def create_database():
         raise Exception("Database Type {} Not Implemented !".format(
             CONF['database_type']))
     local(cmd)
+
+
+@task
+def create_remote_database():
+    if CONF['database_type'] == 'postgres':
+        cmd = 'echo "123"|sudo -S PGPASSWORD={} createdb -e {} -U {}'.\
+              format(CONF['password'], CONF['database_name'], CONF['username'])
+    else:
+        raise Exception("Database Type {} Not Implemented !".format(
+            CONF['database_type']))
+    remote_exec(VM_IP, cmd)
 
 
 @task
@@ -361,6 +385,33 @@ def dump_database():
 
 
 @task
+def dump_remote_database():
+    db_file_path = '{}/{}.dump'.format(
+        CONF['database_save_path'], CONF['database_name'])
+    if remote_file_exists(db_file_path):
+        LOG.info('%s already exists ! ', db_file_path)
+        return False
+    else:
+        LOG.info('Dump database %s to %s', CONF['database_name'], db_file_path)
+        # You must create a directory named dpdata through sqlplus in your Oracle database
+        if CONF['database_type'] == 'oracle':
+            cmd = 'expdp {}/{}@{} schemas={}\
+                 dumpfile={}.dump DIRECTORY=dpdata'.format(
+                'c##tpcc', 'oracle', 'orcldb', 'c##tpcc', 'orcldb')
+        elif CONF['database_type'] == 'postgres':
+            cmd = 'echo "123" | sudo -S PGPASSWORD={} \
+                pg_dump -U {} -F c -d {} > {}'.format(CONF['password'],
+                                                      CONF['username'],
+                                                      CONF['database_name'],
+                                                      db_file_path)
+        else:
+            raise Exception("Database Type {} Not Implemented !".format(
+                CONF['database_type']))
+        remote_exec(VM_IP, cmd)
+        return True
+
+
+@task
 def restore_database():
     if CONF['database_type'] == 'oracle':
         # You must create a directory named dpdata through sqlplus in your Oracle database
@@ -380,6 +431,29 @@ def restore_database():
             CONF['database_type']))
     LOG.info('Start restoring database')
     local(cmd)
+    LOG.info('Finish restoring database')
+
+
+@task
+def restore_remote_database():
+    if CONF['database_type'] == 'oracle':
+        # You must create a directory named dpdata through sqlplus in your Oracle database
+        # The following script assumes such directory exists.
+        # You may want to modify the username, password, and dump file name in the script
+        cmd = 'sh oracleScripts/restoreOracle.sh'
+    elif CONF['database_type'] == 'postgres':
+        db_file_path = '{}/{}.dump'.format(
+            CONF['database_save_path'], CONF['database_name'])
+        drop_remote_database()
+        create_remote_database()
+        cmd = 'echo "123"|sudo -S PGPASSWORD={} pg_restore -U {} -n public -j 8 -F c -d {} {}'.\
+              format(CONF['password'], CONF['username'],
+                     CONF['database_name'], db_file_path)
+    else:
+        raise Exception("Database Type {} Not Implemented !".format(
+            CONF['database_type']))
+    LOG.info('Start restoring database')
+    remote_exec(VM_IP, cmd)
     LOG.info('Finish restoring database')
 
 
@@ -464,7 +538,7 @@ def lhs_samples(count=10):
 
 
 @task
-def remote_loop():
+def remote_loop(iter=1):
 
     # restart qemu vm
     restart_qemu()
@@ -489,6 +563,10 @@ def remote_loop():
 
     # restart remote vm database
     restart_remote_database()
+
+    # restore database every reload interval
+    if iter % RELOAD_INTERVAL == 0:
+        restore_remote_database()
 
     # check disk usage
     # if check_disk_usage() > MAX_DISK_USAGE:
@@ -696,7 +774,7 @@ def run_lhs():
 
 
 @task
-def run_loops(max_iter=1):
+def run_loops(max_iter=5):
     # dump database if it's not done before.
     dump = dump_database()
 
@@ -707,10 +785,26 @@ def run_loops(max_iter=1):
                     restore_database()
                 elif i > 0:
                     restore_database()
-
         LOG.info('The %s-th Loop Starts / Total Loops %s', i + 1, max_iter)
         loop()
         LOG.info('The %s-th Loop Ends / Total Loops %s', i + 1, max_iter)
+
+
+@task
+def run_remote_loops(max_iter=1):
+    # dump database if it's not done before.
+    # dump_remote = dump_remote_database()
+
+    for i in range(int(max_iter)):
+        # if RELOAD_INTERVAL > 0:
+        #     if i % RELOAD_INTERVAL == 0:
+        #         if i == 0 and dump_remote is False:
+        #             restore_remote_database()
+        #         elif i > 0:
+        #             restore_remote_database()
+        LOG.info('The %s-th remote Loop Starts / Total Loops %s', i + 1, max_iter)
+        remote_loop(i)
+        LOG.info('The %s-th remote Loop Ends / Total Loops %s', i + 1, max_iter)
 
 
 @task
@@ -725,14 +819,14 @@ def restart_qemu():
     LOG.info("fabfile.restart_qemu ping result={}".format(out))
     if 'Unreachable' not in out:
         remote_exec(VM_IP, 'echo "123"| sudo -S poweroff')
-        time.sleep(10)
-    next_config_name = "next_config"
-    recommendation = ''
+        while 'Unreachable' not in out:
+            out = remote_exec('192.168.122.1', 'ping -c 2 {}'.format(VM_IP))
+    # next_config_name = "next_config"
+    next_config_name = "next_config.json"
     qemu_parameter = ''
     with open(next_config_name, 'r') as next_config:
         config = json.load(next_config, encoding="UTF-8",
                            object_pairs_hook=OrderedDict)
-        recommendation = config['recommendation']
         qemu_parameter = config['qemu_parameter']
     if len(qemu_parameter) == 0:
         LOG.error("fabfile.restart_qemu qemu_parameter length is 0")
