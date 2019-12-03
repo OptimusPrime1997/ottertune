@@ -6,33 +6,21 @@
 
 package com.controller;
 
-import com.controller.collectors.DBCollector;
-import com.controller.collectors.MySQLCollector;
-import com.controller.collectors.OracleCollector;
-import com.controller.collectors.PostgresCollector;
-import com.controller.collectors.SAPHanaCollector;
+import com.controller.collectors.*;
 import com.controller.types.JSONSchemaType;
 import com.controller.util.FileUtil;
 import com.controller.util.JSONUtil;
 import com.controller.util.json.JSONException;
 import com.controller.util.json.JSONObject;
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.IOException;
-import java.io.PrintWriter;
-import java.io.UnsupportedEncodingException;
-import java.lang.management.ManagementFactory;
-import java.util.HashMap;
-import java.util.Map;
-import org.apache.commons.cli.CommandLine;
-import org.apache.commons.cli.CommandLineParser;
-import org.apache.commons.cli.HelpFormatter;
-import org.apache.commons.cli.Options;
-import org.apache.commons.cli.ParseException;
-import org.apache.commons.cli.PosixParser;
+import org.apache.commons.cli.*;
 import org.apache.log4j.Logger;
 import org.apache.log4j.PropertyConfigurator;
 import sun.misc.Signal;
+
+import java.io.*;
+import java.lang.management.ManagementFactory;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Controller main.
@@ -178,7 +166,8 @@ public class Main {
       String knobs = collector.collectParameters();
       if (!JSONSchemaType.isValidJson(JSONSchemaType.OUTPUT, knobs)) {
         LOG.error("Invalid output JSON format (knobs)");
-        return;
+        LOG.info("Modified output JSON format (knobs)");
+//        return;
       }
       PrintWriter knobsWriter =
           new PrintWriter(FileUtil.joinPath(outputDirectory, "knobs.json"), "UTF-8");

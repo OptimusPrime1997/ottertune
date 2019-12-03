@@ -1,3 +1,4 @@
+
 /*
  * OtterTune - FileUtil.java
  *
@@ -6,19 +7,16 @@
 
 package com.controller.util;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileReader;
-import java.io.FileWriter;
-import java.io.FilenameFilter;
-import java.io.IOException;
-import java.io.InputStreamReader;
+
+import org.apache.commons.io.FileUtils;
+import org.apache.log4j.Logger;
+import org.json.JSONObject;
+
+import java.io.*;
 import java.util.Arrays;
 import java.util.List;
 import java.util.regex.Pattern;
 import java.util.zip.GZIPInputStream;
-import org.apache.log4j.Logger;
 
 /** @author pavlo */
 public abstract class FileUtil {
@@ -296,7 +294,7 @@ public abstract class FileUtil {
     int offset = 0;
     int numRead = 0;
     while ((offset < bytes.length)
-        && ((numRead = in.read(bytes, offset, bytes.length - offset)) >= 0)) {
+            && ((numRead = in.read(bytes, offset, bytes.length - offset)) >= 0)) {
       offset += numRead;
     } // WHILE
     if (offset < bytes.length) {
@@ -322,7 +320,7 @@ public abstract class FileUtil {
    * Find the path to a directory below our current location in the source tree Throws a
    * RuntimeException if we go beyond our repository checkout
    *
-   * @param dirName
+   * @param fileName
    * @return
    * @throws IOException
    */
@@ -344,7 +342,7 @@ public abstract class FileUtil {
     // If we didn't see an .svn directory, then we went too far down
     if (!hasSvn) {
       throw new RuntimeException(
-          "Unable to find directory '" + name + "' [last_dir=" + current.getAbsolutePath() + "]");
+              "Unable to find directory '" + name + "' [last_dir=" + current.getAbsolutePath() + "]");
     }
     File next = new File(current.getCanonicalPath() + File.separator + "");
     return (FileUtil.find(name, next, isdir));
@@ -359,15 +357,15 @@ public abstract class FileUtil {
    * @throws IOException
    */
   public static List<File> getFilesInDirectory(final File dir, final String filePrefix)
-      throws IOException {
+          throws IOException {
     assert (dir.isDirectory()) : "Invalid search directory path: " + dir;
     FilenameFilter filter =
-        new FilenameFilter() {
-          @Override
-          public boolean accept(File dir, String name) {
-            return (name.startsWith(filePrefix));
-          }
-        };
+            new FilenameFilter() {
+              @Override
+              public boolean accept(File dir, String name) {
+                return (name.startsWith(filePrefix));
+              }
+            };
     return (Arrays.asList(dir.listFiles(filter)));
   }
 
@@ -380,4 +378,28 @@ public abstract class FileUtil {
     }
     return current;
   }
+  public static JSONObject getJsonObject(String filepath){
+    JSONObject jsonObj=null;
+    try{
+      File file=new File(filepath);
+      String content= FileUtils.readFileToString(file,"UTF-8");
+      jsonObj=new JSONObject(content);
+      System.out.println("parameter="+jsonObj.getJSONObject("qemu_parameter"));
+      JSONObject para=jsonObj.getJSONObject("qemu_parameter");
+      LOG.info("qemu_parameter="+para);
+      LOG.info("cpu_number="+para.getInt("cpu_number"));
+      LOG.info("qemu_number="+para.getInt("qemu_number"));
+      LOG.info("memory_size="+para.getString("memory_size"));
+      LOG.info("hardware_queue_number="+para.getInt("hardware_queue_number"));
+    }catch(IOException e){
+      e.printStackTrace();
+    }
+    return jsonObj;
+  }
+  public static void main(String[] args){
+    System.out.println("Execute FileUtil.main method function");
+    getJsonObject("E:/Workspace/Workspace_Java/ottertune/client/driver/next_config.json");
+  }
 }
+
+

@@ -16,7 +16,7 @@
   },
    "qemu_parameter": {
     "qemu_number": 1,
-    "cpu_number": 8,
+    "cpu_number": 14,
     "memory_size": "4GB",
     "hardware_queue_number": 3
   }

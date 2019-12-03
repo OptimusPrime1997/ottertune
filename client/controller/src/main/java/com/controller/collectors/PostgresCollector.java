@@ -6,24 +6,26 @@
 
 package com.controller.collectors;
 
+import com.controller.util.FileUtil;
 import com.controller.util.JSONUtil;
 import com.controller.util.json.JSONException;
 import com.controller.util.json.JSONObject;
 import com.controller.util.json.JSONStringer;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.ResultSet;
-import java.sql.ResultSetMetaData;
-import java.sql.SQLException;
-import java.sql.Statement;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.TreeMap;
 import org.apache.log4j.Logger;
 
+import java.sql.*;
+import java.util.*;
+
 public class PostgresCollector extends DBCollector {
+  private static final String NEXT_CONF_PATH="/ottertune/client/driver/next_config.json";
+//private static final String NEXT_CONF_PATH="E:/Workspace/Workspace_Java/ottertune/client/driver/next_config.json";
+  private static final String QEMU_PARAMETER="qemu_parameter";
+  private static final String CPU_NUMBER="cpu_number";
+  private static final String QEMU_NUMBER="qemu_number";
+  private static final String MEMORY_SIZE="memory_size";
+  private static final String HARDWARE_QUEUE_NUMBER="hardware_queue_number";
+
+
   private static final Logger LOG = Logger.getLogger(PostgresCollector.class);
 
   private static final String VERSION_SQL = "SELECT version();";
@@ -220,10 +222,22 @@ public class PostgresCollector extends DBCollector {
       stringer.key(JSON_GLOBAL_KEY);
       JSONObject jobLocal = new JSONObject();
       JSONObject job = new JSONObject();
+//      add qemu hardware first
+      org.json.JSONObject jsonObjectRaw= FileUtil.getJsonObject(NEXT_CONF_PATH);
+      org.json.JSONObject jsonObject=jsonObjectRaw.getJSONObject(QEMU_PARAMETER);
+      LOG.info("Main.collectParameters jsonObject="+jsonObject);
+      System.out.println("Main.collectParameters jsonObject="+jsonObject);
+      System.out.println("Main.collectParameters jsonObject.keySize="+jsonObject.keySet().size());
+      job.put(CPU_NUMBER,jsonObject.getInt(CPU_NUMBER));
+      job.put(QEMU_NUMBER,jsonObject.getInt(QEMU_NUMBER));
+      job.put(MEMORY_SIZE,jsonObject.getString(MEMORY_SIZE));
+      job.put(HARDWARE_QUEUE_NUMBER,jsonObject.getInt(HARDWARE_QUEUE_NUMBER));
+
       for (String k : dbParameters.keySet()) {
         job.put(k, dbParameters.get(k));
       }
       // "global is a fake view_name (a placeholder)"
+      LOG.info("PostgresCollector.collectParameter() Parameter Information="+job.toString());
       jobLocal.put("global", job);
       stringer.value(jobLocal);
       stringer.key(JSON_LOCAL_KEY);
@@ -233,5 +247,13 @@ public class PostgresCollector extends DBCollector {
       jsonexn.printStackTrace();
     }
     return JSONUtil.format(stringer.toString());
+  }
+
+  public static void main(String[] args) {
+    PostgresCollector postgresCollector =new PostgresCollector("jdbc:postgresql://10.0.2.41:5432/tpcc",
+            "postgres","test123");
+    LOG.info(postgresCollector.collectParameters());
+    System.out.println(postgresCollector.collectParameters());
+
   }
 }

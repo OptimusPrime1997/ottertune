@@ -87,7 +87,7 @@ def check_memory_usage():
 @task
 def restart_remote_database():
     if CONF['database_type'] == 'postgres':
-        cmd = 'sudo service postgresql restart'
+        cmd = 'echo "123" | sudo -S service postgresql restart'
     elif CONF['database_type'] == 'oracle':
         driver_folder = CONF['oltpbench_log'][:CONF['oltpbench_log'].rfind(
             '/')+1]
@@ -114,7 +114,7 @@ def restart_database():
 @task
 def drop_database():
     if CONF['database_type'] == 'postgres':
-        cmd = "PGPASSWORD={} dropdb -e --if-exists {} -U {}".\
+        cmd = "PGPASSWORD={} dropdb -e --if-exists {} -U {} -h 192.168.122.1 -p 5432".\
               format(CONF['password'], CONF['database_name'], CONF['username'])
     else:
         raise Exception("Database Type {} Not Implemented !".format(
@@ -138,7 +138,7 @@ def drop_remote_database():
 @task
 def create_database():
     if CONF['database_type'] == 'postgres':
-        cmd = "PGPASSWORD={} createdb -e {} -U {}".\
+        cmd = "PGPASSWORD={} createdb -e {} -U {} -h 192.168.122.1 -p 5432".\
               format(CONF['password'], CONF['database_name'], CONF['username'])
     else:
         raise Exception("Database Type {} Not Implemented !".format(
@@ -186,7 +186,7 @@ def load_oltpbench():
 
 @task
 def run_oltpbench():
-    cmd = "./oltpbenchmark -b {} -c {} --execute=true -s 5 -o outputfile".\
+    cmd = 'echo "123" | sudo -S ./oltpbenchmark -b {} -c {} --execute=true -s 5 -o outputfile'.\
           format(CONF['oltpbench_workload'], CONF['oltpbench_config'])
     with lcd(CONF['oltpbench_home']):  # pylint: disable=not-context-manager
         local(cmd)
@@ -194,8 +194,8 @@ def run_oltpbench():
 
 @task
 def run_oltpbench_bg():
-    cmd = "./oltpbenchmark -b {} -c {} --execute=true\
-         -s 5 -o outputfile > {} 2>&1 &".format(CONF['oltpbench_workload'],
+    cmd = 'echo "123" | sudo -S ./oltpbenchmark -b {} -c {} --execute=true\
+         -s 5 -o outputfile > {} 2>&1 &'.format(CONF['oltpbench_workload'],
                                                 CONF['oltpbench_config'], CONF['oltpbench_log'])
     with lcd(CONF['oltpbench_home']):  # pylint: disable=not-context-manager
         local(cmd)
@@ -247,18 +247,6 @@ def signal_remote_controller():
     remote_exec(VM_IP, 'echo "123" | sudo -S kill -2 {}'.format(pid))
     remote_exec(VM_IP, 'echo "123"|sudo -S ps -ef | grep gradle |'
                 ' awk {print $2}|xargs sudo kill -2 ')
-
-
-@task
-def save_dbms_result():
-    t = int(time.time())
-    files = ['knobs.json', 'metrics_after.json',
-             'metrics_before.json', 'summary.json']
-    for f_ in files:
-        f_prefix = f_.split('.')[0]
-        cmd = 'cp ../controller/output/{} {}/{}__{}.json'.\
-              format(f_, CONF['save_path'], t, f_prefix)
-        local(cmd)
 
 
 @task
@@ -541,7 +529,7 @@ def lhs_samples(count=10):
 def remote_loop(iter=1):
 
     # restart qemu vm
-    restart_qemu()
+    # restart_qemu()
 
     # free remote vm cache
     free_remote_cache()
@@ -624,28 +612,28 @@ def remote_loop(iter=1):
 def loop():
 
     # restart qemu vm
-    restart_qemu()
+    # restart_qemu()
 
     # free remote vm cache
-    free_remote_cache()
+    # free_remote_cache()
 
     # free cache
     free_cache()
 
     # rsync local folder to remote vm
-    rsync_remote_folder_all()
+    # rsync_remote_folder_all()
 
     # remove oltpbench log and controller log
     clean_logs()
 
     # remove oltpbench log and controller log on remote vm
-    clean_remote_logs()
+    # clean_remote_logs()
 
     # restart database
     restart_database()
 
     # restart remote vm database
-    restart_remote_database()
+    # restart_remote_database()
 
     # check disk usage
     if check_disk_usage() > MAX_DISK_USAGE:
@@ -681,6 +669,9 @@ def loop():
 
     # save result
     save_dbms_result()
+
+    # test for code
+    exit()
 
     # upload result
     upload_result()
@@ -844,10 +835,19 @@ def restart_qemu():
     # GB,must delete the letter
     tmp_mem_size = qemu_parameter['memory_size']  # the unit is GB
     mem_size = tmp_mem_size[:len(tmp_mem_size)-1]
-    start_vm_cmd = "sudo bash ./qemuScripts/start_vm_N_Q_C.sh {} {} {} {}".format(
-        vm_num, queue_num, cpu_num, mem_size)
+    start_vm_cmd = "sudo bash ./qemuScripts/start_vm_N_Q_C.sh {} {} {} {}"\
+        .format(
+            vm_num, queue_num, cpu_num, mem_size)
     local(start_vm_cmd)
     # exit()
+    out_result = remote_exec('192.168.122.1', 'ping -c 2 {}'.format(VM_IP))
+    LOG.info("fabfile.restart_qemu ensure qemu is started. ping result={}"
+             .format(out_result))
+    if 'Unreachable' in out_result:
+        remote_exec(VM_IP, 'echo "123"| sudo -S poweroff')
+        while 'Unreachable' in out_result:
+            out_result = remote_exec(
+                '192.168.122.1', 'ping -c 2 {}'.format(VM_IP))
 
 
 @task

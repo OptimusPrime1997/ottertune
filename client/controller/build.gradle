@@ -9,6 +9,7 @@ apply plugin: 'application'
 apply plugin: 'project-report'
 
 mainClassName = "com.controller.Main"
+// mainClassName = "com.controller.util.FileUtil"
 
 test.testLogging { exceptionFormat "full"; events "failed", "passed", "skipped" }
 
@@ -50,6 +51,13 @@ dependencies {
 
     // https://mvnrepository.com/artifact/org.postgresql/postgresql
     compile group: 'org.postgresql', name: 'postgresql', version: '9.4-1201-jdbc41'
+
+//   add json jar
+    // https://mvnrepository.com/artifact/org.json/json
+    compile group: 'org.json', name: 'json', version: '20160810'
+// https://mvnrepository.com/artifact/commons-io/commons-io
+    compile group: 'commons-io', name: 'commons-io', version: '2.4'
+
 
     // This lib has to be manually downloaded from Oracle
     dependencies {compile files('lib/ojdbc8.jar')}
