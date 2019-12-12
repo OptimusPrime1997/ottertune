@@ -103,6 +103,12 @@ def restart_remote_database():
 def restart_database():
     if CONF['database_type'] == 'postgres':
         cmd = 'echo "123" | sudo -S service postgresql restart'
+        postgresql_pid = remote_exec(
+            "127.0.0.1", "ps -ef|grep postgresql/9.6 | grep -v grep | awk '{print $2}'")
+        taskset_cmd = 'echo "123"|sudo -S taskset -pc 0-69 {}'.format(
+            postgresql_pid)
+        LOG.info(taskset_cmd)
+        local(taskset_cmd)
     elif CONF['database_type'] == 'oracle':
         cmd = 'sh oracleScripts/shutdownOracle.sh && sh oracleScripts/startupOracle.sh'
     else:
@@ -114,7 +120,7 @@ def restart_database():
 @task
 def drop_database():
     if CONF['database_type'] == 'postgres':
-        cmd = "PGPASSWORD={} dropdb -e --if-exists {} -U {} -h 192.168.122.1 -p 5432".\
+        cmd = "PGPASSWORD={} dropdb -e --if-exists {} -U  {} -h 192.168.122.1 -p 5432".\
               format(CONF['password'], CONF['database_name'], CONF['username'])
     else:
         raise Exception("Database Type {} Not Implemented !".format(
@@ -278,7 +284,7 @@ def save_remote_dbms_result():
 
 @task
 def free_cache():
-    cmd = 'sync; sudo bash -c "echo 1 > /proc/sys/vm/drop_caches"'
+    cmd = 'sync; echo "123" | sudo -S bash -c "echo 1 > /proc/sys/vm/drop_caches"'
     local(cmd)
 
 
@@ -361,10 +367,10 @@ def dump_database():
             cmd = 'expdp {}/{}@{} schemas={} dumpfile={}.dump DIRECTORY=dpdata'.format(
                 'c##tpcc', 'oracle', 'orcldb', 'c##tpcc', 'orcldb')
         elif CONF['database_type'] == 'postgres':
-            cmd = 'PGPASSWORD={} pg_dump -U {} -F c -d {} > {}'.format(CONF['password'],
-                                                                       CONF['username'],
-                                                                       CONF['database_name'],
-                                                                       db_file_path)
+            cmd = 'PGPASSWORD={} pg_dump  {} -h 127.0.0.1 -p 5432 -U F c -d {} > {}'.format(CONF['password'],
+                                                                                            CONF['username'],
+                                                                                            CONF['database_name'],
+                                                                                            db_file_path)
         else:
             raise Exception("Database Type {} Not Implemented !".format(
                 CONF['database_type']))
@@ -411,7 +417,7 @@ def restore_database():
             CONF['database_save_path'], CONF['database_name'])
         drop_database()
         create_database()
-        cmd = 'PGPASSWORD={} pg_restore -U {} -n public -j 8 -F c -d {} {}'.\
+        cmd = 'PGPASSWORD={} pg_restore -h 127.0.0.1 -p 5432 -U  {} -n public -j 8 -F c -d {} {}'.\
               format(CONF['password'], CONF['username'],
                      CONF['database_name'], db_file_path)
     else:
@@ -529,7 +535,7 @@ def lhs_samples(count=10):
 def remote_loop(iter=1):
 
     # restart qemu vm
-    # restart_qemu()
+    restart_qemu()
 
     # free remote vm cache
     free_remote_cache()

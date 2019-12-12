@@ -500,6 +500,7 @@ def map_workload(target_data):
     unique_workloads = pipeline_data.values_list(
         'workload', flat=True).distinct()
     assert len(unique_workloads) > 0
+    # assert len(unique_workloads) >= 0
     workload_data = {}
     for unique_workload in unique_workloads:
 
@@ -557,6 +558,7 @@ def map_workload(target_data):
         }
 
     assert len(workload_data) > 0
+    # assert len(workload_data) >= 0
 
     # Stack all X & y matrices for preprocessing
     Xs = np.vstack([entry['X_matrix']

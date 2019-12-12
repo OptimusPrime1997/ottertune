@@ -18,5 +18,5 @@
   "lhs_knob_path": "/ottertune/client/driver/knobs/postgres-96.json",
   "lhs_save_path": "/ottertune/client/driver/configs",
   "oracle_awr_enabled": false,
-  "qemu_script_path": "/ottertune/client/driver/"
+  "qemu_script_path":"/ottertune/client/driver/"
 }

@@ -228,10 +228,10 @@ public class PostgresCollector extends DBCollector {
       LOG.info("Main.collectParameters jsonObject="+jsonObject);
       System.out.println("Main.collectParameters jsonObject="+jsonObject);
       System.out.println("Main.collectParameters jsonObject.keySize="+jsonObject.keySet().size());
-      job.put(CPU_NUMBER,jsonObject.getInt(CPU_NUMBER));
-      job.put(QEMU_NUMBER,jsonObject.getInt(QEMU_NUMBER));
-      job.put(MEMORY_SIZE,jsonObject.getString(MEMORY_SIZE));
-      job.put(HARDWARE_QUEUE_NUMBER,jsonObject.getInt(HARDWARE_QUEUE_NUMBER));
+      //job.put(CPU_NUMBER,jsonObject.getInt(CPU_NUMBER));
+      //job.put(QEMU_NUMBER,jsonObject.getInt(QEMU_NUMBER));
+      //job.put(MEMORY_SIZE,jsonObject.getString(MEMORY_SIZE));
+      //job.put(HARDWARE_QUEUE_NUMBER,jsonObject.getInt(HARDWARE_QUEUE_NUMBER));
 
       for (String k : dbParameters.keySet()) {
         job.put(k, dbParameters.get(k));

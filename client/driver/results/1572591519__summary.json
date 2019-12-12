@@ -1,8 +1,0 @@
-{
- "start_time": 1572591507763,
- "end_time": 1572591518305,
- "observation_time": 10,
- "database_type": "postgres",
- "database_version": "9.6",
- "workload_name": "delta_postgres96"
-}
