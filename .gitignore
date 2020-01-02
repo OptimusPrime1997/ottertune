@@ -93,6 +93,8 @@ ENV/
 *.pid
 client/driver/results
 client/controller/pid.txt
+*.pid
+*.pid.bak
 
 # Intellij and PyCharm #
 .idea
