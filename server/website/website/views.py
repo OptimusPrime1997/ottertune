@@ -42,8 +42,9 @@ from .settings import TIME_ZONE
 
 from .set_default_knobs import set_default_knobs
 
-LOG = logging.getLogger(__name__)
 
+LOG = logging.getLogger(__name__)
+LATENCY_99TH = '99th_lat_ms'
 
 # For the html template to access dict object
 @register.filter
@@ -507,6 +508,8 @@ def handle_result_files(session, files):
     metric_dict = Parser.calculate_change_in_metrics(
         dbms.pk, initial_metric_dict, final_metric_dict)
     initial_metric_diffs.extend(final_metric_diffs)
+    metric_dict[LATENCY_99TH] = float(summary[LATENCY_99TH])
+    # this maybe error
     numeric_metric_dict = Parser.convert_dbms_metrics(
         dbms.pk, metric_dict, observation_time, session.target_objective)
     metric_data = MetricData.objects.create_metric_data(
@@ -558,7 +561,7 @@ def handle_result_files(session, files):
         LOG.info("views.handle_reuslt_files execute AlgorithmType.OTTERTUNE")
         response = chain(aggregate_target_results.s(result.pk),
                          map_workload.s(),
-                         configuration_recommendation.s() ).apply_async()
+                         configuration_recommendation.s()).apply_async()
     elif session.algorithm == AlgorithmType.ALGORITHM1:
         pass
     elif session.algorithm == AlgorithmType.ALGORITHM2:
@@ -904,7 +907,11 @@ def get_timeline_data(request):
         workload_confs = [
             wc for wc in request.GET['spe'].strip().split(',') if wc != '']
         results = [r for r in results if str(r.workload.pk) in workload_confs]
-
+    # LOG.info("result as follow===========================")
+    # LOG.info(results)
+    print_data = [r.metric_data.data for r in results]
+    # LOG.info("r.metric_data.data as follow=================")
+    # LOG.info(print_data)
     metric_datas = {r.pk: JSONUtil.loads(r.metric_data.data) for r in results}
     result_list = []
     for res in results:

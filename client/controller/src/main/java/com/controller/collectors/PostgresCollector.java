@@ -11,10 +11,10 @@ import com.controller.util.JSONUtil;
 import com.controller.util.json.JSONException;
 import com.controller.util.json.JSONObject;
 import com.controller.util.json.JSONStringer;
-import org.apache.log4j.Logger;
-
 import java.sql.*;
 import java.util.*;
+import org.apache.log4j.Logger;
+
 
 public class PostgresCollector extends DBCollector {
   private static final String NEXT_CONF_PATH="/ottertune/client/driver/next_config.json";
@@ -228,10 +228,10 @@ public class PostgresCollector extends DBCollector {
       LOG.info("Main.collectParameters jsonObject="+jsonObject);
       System.out.println("Main.collectParameters jsonObject="+jsonObject);
       System.out.println("Main.collectParameters jsonObject.keySize="+jsonObject.keySet().size());
-      //job.put(CPU_NUMBER,jsonObject.getInt(CPU_NUMBER));
-      //job.put(QEMU_NUMBER,jsonObject.getInt(QEMU_NUMBER));
-      //job.put(MEMORY_SIZE,jsonObject.getString(MEMORY_SIZE));
-      //job.put(HARDWARE_QUEUE_NUMBER,jsonObject.getInt(HARDWARE_QUEUE_NUMBER));
+      // job.put(CPU_NUMBER,jsonObject.getInt(CPU_NUMBER));
+      // job.put(QEMU_NUMBER,jsonObject.getInt(QEMU_NUMBER));
+      // job.put(MEMORY_SIZE,jsonObject.getString(MEMORY_SIZE));
+      // job.put(HARDWARE_QUEUE_NUMBER,jsonObject.getInt(HARDWARE_QUEUE_NUMBER));
 
       for (String k : dbParameters.keySet()) {
         job.put(k, dbParameters.get(k));
@@ -250,10 +250,10 @@ public class PostgresCollector extends DBCollector {
   }
 
   public static void main(String[] args) {
-    PostgresCollector postgresCollector =new PostgresCollector("jdbc:postgresql://10.0.2.41:5432/tpcc",
-            "postgres","test123");
-    LOG.info(postgresCollector.collectParameters());
-    System.out.println(postgresCollector.collectParameters());
+    // PostgresCollector postgresCollector =new PostgresCollector("jdbc:postgresql://10.0.2.41:5432/tpcc",
+    //         "postgres","test123");
+    // LOG.info(postgresCollector.collectParameters());
+    // System.out.println(postgresCollector.collectParameters());
 
   }
 }

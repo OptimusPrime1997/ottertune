@@ -6,12 +6,18 @@
 
 from abc import ABCMeta, abstractmethod, abstractproperty
 from collections import OrderedDict
-
-from website.models import KnobCatalog, MetricCatalog
+import json
+from website.models import KnobCatalog, MetricCatalog, BackupData
 from website.types import BooleanType, MetricType, VarType
 
+import logging
 
-# pylint: disable=no-self-use
+LOG = logging.getLogger()
+LOG.setLevel(logging.INFO)
+LATENCY_99TH = '99th_lat_ms'
+THROUGHPUT_TXN_PER_SEC = 'throughput_txn_per_sec'
+
+
 class BaseParser(object, metaclass=ABCMeta):
 
     def __init__(self, dbms_obj):
@@ -50,15 +56,15 @@ class BaseParser(object, metaclass=ABCMeta):
         pass
 
     def target_metric(self, target_objective=None):
-        if target_objective == 'throughput_txn_per_sec' or target_objective is None:
+        if target_objective == THROUGHPUT_TXN_PER_SEC or target_objective is None:
             # throughput
             res = self.transactions_counter
-        elif target_objective == '99th_lat_ms':
+        elif target_objective == LATENCY_99TH:
             # 99 percentile latency
             res = self.latency_timer
         else:
-            raise Exception("Target Objective {} Not Supported".format(target_objective))
-
+            raise Exception(
+                "Target Objective {} Not Supported".format(target_objective))
         return res
 
     @abstractmethod
@@ -163,7 +169,8 @@ class BaseParser(object, metaclass=ABCMeta):
                     'Unknown variable type: {}'.format(metadata.vartype))
 
             if conv_value is None:
-                raise Exception('Param value for {} cannot be null'.format(name))
+                raise Exception(
+                    'Param value for {} cannot be null'.format(name))
             knob_data[name] = conv_value
 
         return knob_data
@@ -191,15 +198,30 @@ class BaseParser(object, metaclass=ABCMeta):
             else:
                 raise Exception(
                     'Unknown metric type for {}: {}'.format(name, metadata.metric_type))
-
-        if target_objective is not None and self.target_metric(target_objective) not in metric_data:
+        metric_data[LATENCY_99TH] = metrics[LATENCY_99TH]
+        metric_data[THROUGHPUT_TXN_PER_SEC] = metric_data[self.target_metric(
+            THROUGHPUT_TXN_PER_SEC)]
+        if (target_objective is not None
+            and self.target_metric(target_objective) not in metric_data
+                and target_objective != LATENCY_99TH):
             raise Exception("Cannot find objective function")
 
         if target_objective is not None:
-            metric_data[target_objective] = metric_data[self.target_metric(target_objective)]
+            # if target_objective == LATENCY_99TH:
+            #     last_record = BackupData.objects.last()
+            #     LOG.info(last_record)
+            #     print("execute print last_record.raw_summary")
+            #     LOG.info(last_record.raw_summary)
+            #     raw_summary_data = json.loads(last_record.raw_summary)
+            #     LOG.info(raw_summary_data)
+            #     metric_data[target_objective] = float(
+            #         raw_summary_data[LATENCY_99TH])
+            # else:
+            metric_data[target_objective] = metric_data[self.target_metric(
+                target_objective)]
         else:
             # default
-            metric_data['throughput_txn_per_sec'] = \
+            metric_data[THROUGHPUT_TXN_PER_SEC] = \
                 metric_data[self.target_metric(target_objective)]
 
         return metric_data
@@ -213,6 +235,8 @@ class BaseParser(object, metaclass=ABCMeta):
         # First check that the names of all variables are valid (i.e., listed
         # in the official catalog). Invalid variables are logged as 'extras'.
         # Variable names that are valid but differ in capitalization are still
+
+        ''
         # added to valid_variables but with the proper capitalization. They
         # are also logged as 'miscapitalized'.
         for var_name, var_value in list(variables.items()):
@@ -220,7 +244,8 @@ class BaseParser(object, metaclass=ABCMeta):
             if lc_var_name in valid_lc_variables:
                 valid_name = valid_lc_variables[lc_var_name].name
                 if var_name != valid_name:
-                    diff_log.append(('miscapitalized', valid_name, var_name, var_value))
+                    diff_log.append(
+                        ('miscapitalized', valid_name, var_name, var_value))
                 valid_variables[valid_name] = var_value
             else:
                 diff_log.append(('extra', None, var_name, var_value))
@@ -253,7 +278,8 @@ class BaseParser(object, metaclass=ABCMeta):
             if sub_vars is None:
                 continue
             if scope == 'global':
-                valid_variables.update(self.parse_helper(scope, valid_variables, sub_vars))
+                valid_variables.update(self.parse_helper(
+                    scope, valid_variables, sub_vars))
             elif scope == 'local':
                 for _, viewnames in list(sub_vars.items()):
                     for viewname, objnames in list(viewnames.items()):

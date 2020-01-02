@@ -1,9 +1,9 @@
 {
   "database_type": "postgres",
-  "database_url": "jdbc:postgresql://localhost:5432/tpcc",
+  "database_url": "jdbc:postgresql://192.168.122.131:5432/tpcc",
   "username": "postgres",
   "password": "test123",
-  "upload_code": "ATHY9EL5BIQT1EM5ZHEV",
+  "upload_code": "OX1ZYJVV6WZLPO37QDV7",
   "upload_url": "http://192.168.122.1:8000",
-  "workload_name": "vm_postgresql96"
+  "workload_name": "NVMe_Postgres96_Notunning"
 }

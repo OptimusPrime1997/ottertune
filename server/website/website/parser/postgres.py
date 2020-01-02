@@ -48,7 +48,8 @@ class PostgresParser(BaseParser):
 
     @property
     def latency_timer(self):
-        return 'pg_stat_database.xact_commit'
+        return '99th_lat_ms'
+        # return 'pg_stat_database.xact_commit'
 
     def convert_integer(self, int_value, metadata):
         converted = None

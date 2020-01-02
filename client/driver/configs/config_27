@@ -1,0 +1,1 @@
+{"recommendation": {"effective_cache_size": "6GB", "shared_buffers": "499MB", "max_parallel_workers_per_gather": 1, "default_statistics_target": 989, "bgwriter_lru_maxpages": 441, "checkpoint_timeout": "1min", "random_page_cost": 5.805666507749854, "checkpoint_completion_target": 0.5507621039604884, "max_wal_size": "13GB", "temp_buffers": "623MB", "work_mem": "124MB"}}

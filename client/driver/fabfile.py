@@ -22,7 +22,7 @@ import paramiko
 from collections import OrderedDict
 
 
-VM_IP = "192.168.122.77"
+VM_IP = "192.168.122.131"
 LOG = logging.getLogger()
 # LOG.setLevel(logging.DEBUG)
 LOG.setLevel(logging.INFO)
@@ -46,7 +46,7 @@ fabric_output.update({
 # intervals of restoring the databse
 RELOAD_INTERVAL = 10
 # maximum disk usage
-MAX_DISK_USAGE = 90
+MAX_DISK_USAGE = 95
 
 with open('driver_config.json', 'r') as f:
     CONF = json.load(f)
@@ -103,12 +103,12 @@ def restart_remote_database():
 def restart_database():
     if CONF['database_type'] == 'postgres':
         cmd = 'echo "123" | sudo -S service postgresql restart'
-        postgresql_pid = remote_exec(
-            "127.0.0.1", "ps -ef|grep postgresql/9.6 | grep -v grep | awk '{print $2}'")
-        taskset_cmd = 'echo "123"|sudo -S taskset -pc 0-69 {}'.format(
-            postgresql_pid)
-        LOG.info(taskset_cmd)
-        local(taskset_cmd)
+        # postgresql_pid = remote_exec(
+        #     "127.0.0.1", "ps -ef|grep postgresql/9 | grep -v grep | awk '{print $2}'")
+        # taskset_cmd = 'echo "123"|sudo -S taskset -pc 0-69 {}'.format(
+        #     postgresql_pid)
+        # LOG.info(taskset_cmd)
+        # local(taskset_cmd)
     elif CONF['database_type'] == 'oracle':
         cmd = 'sh oracleScripts/shutdownOracle.sh && sh oracleScripts/startupOracle.sh'
     else:
@@ -120,7 +120,7 @@ def restart_database():
 @task
 def drop_database():
     if CONF['database_type'] == 'postgres':
-        cmd = "PGPASSWORD={} dropdb -e --if-exists {} -U  {} -h 192.168.122.1 -p 5432".\
+        cmd = "PGPASSWORD={} dropdb -e --if-exists {} -U  {} -h 192.168.122.131 -p 5432".\
               format(CONF['password'], CONF['database_name'], CONF['username'])
     else:
         raise Exception("Database Type {} Not Implemented !".format(
@@ -144,7 +144,7 @@ def drop_remote_database():
 @task
 def create_database():
     if CONF['database_type'] == 'postgres':
-        cmd = "PGPASSWORD={} createdb -e {} -U {} -h 192.168.122.1 -p 5432".\
+        cmd = "PGPASSWORD={} createdb -e {} -U {} -h 192.168.122.131 -p 5432".\
               format(CONF['password'], CONF['database_name'], CONF['username'])
     else:
         raise Exception("Database Type {} Not Implemented !".format(
@@ -201,8 +201,8 @@ def run_oltpbench():
 @task
 def run_oltpbench_bg():
     cmd = 'echo "123" | sudo -S ./oltpbenchmark -b {} -c {} --execute=true\
-         -s 5 -o outputfile > {} 2>&1 &'.format(CONF['oltpbench_workload'],
-                                                CONF['oltpbench_config'], CONF['oltpbench_log'])
+         -s 30 -o outputfile > {} 2>&1 &'.format(CONF['oltpbench_workload'],
+                                                 CONF['oltpbench_config'], CONF['oltpbench_log'])
     with lcd(CONF['oltpbench_home']):  # pylint: disable=not-context-manager
         local(cmd)
 
@@ -210,7 +210,7 @@ def run_oltpbench_bg():
 @task
 def run_remote_oltpbench_bg():
     cmd = "cd {}/ && nohup {}/oltpbenchmark -b {} -c {} --execute=true \
-        -s 5 -o outputfile > {} 2>&1 &".\
+        -s 30 -o outputfile > {} 2>&1 &".\
           format(CONF['oltpbench_home'], CONF['oltpbench_home'], CONF['oltpbench_workload'],
                  CONF['oltpbench_config'], CONF['oltpbench_log'])
     # with lcd(CONF['oltpbench_home']):  # pylint: disable=not-context-manager
@@ -220,7 +220,7 @@ def run_remote_oltpbench_bg():
 
 @task
 def run_controller():
-    cmd = 'sudo gradle run -PappArgs="-c {} -d output/" --no-daemon > {}'.\
+    cmd = 'echo "123" | sudo -S gradle run -PappArgs="-c {} -d output/" --no-daemon > {}'.\
           format(CONF['controller_config'], CONF['controller_log'])
     with lcd("../controller"):  # pylint: disable=not-context-manager
         local(cmd)
@@ -341,8 +341,16 @@ def get_remote_result():
 
 @task
 def add_udf():
-    cmd = 'sudo python3 ./LatencyUDF.py ../controller/output/'
+    cmd = 'sudo python3 ./LatencyUDF.py ../controller/output/ /home/ljh/projects/oltpbench/results/'
     local(cmd)
+
+
+# @task
+# def add_remote_udf():
+#     remote_cmd = ('cd {}; sudo python3 ./LatencyUDF.py ../controller/output/'
+#                   ).format(
+#         CONF['qemu_script_path'])
+#     remote_exec(remote_cmd)
 
 
 @task
@@ -367,10 +375,10 @@ def dump_database():
             cmd = 'expdp {}/{}@{} schemas={} dumpfile={}.dump DIRECTORY=dpdata'.format(
                 'c##tpcc', 'oracle', 'orcldb', 'c##tpcc', 'orcldb')
         elif CONF['database_type'] == 'postgres':
-            cmd = 'PGPASSWORD={} pg_dump  {} -h 127.0.0.1 -p 5432 -U F c -d {} > {}'.format(CONF['password'],
-                                                                                            CONF['username'],
-                                                                                            CONF['database_name'],
-                                                                                            db_file_path)
+            cmd = 'PGPASSWORD={} pg_dump -U {} -h 127.0.0.1 -p 5432 -U F c -d {} > {}'.format(CONF['password'],
+                                                                                              CONF['username'],
+                                                                                              CONF['database_name'],
+                                                                                              db_file_path)
         else:
             raise Exception("Database Type {} Not Implemented !".format(
                 CONF['database_type']))
@@ -382,7 +390,7 @@ def dump_database():
 def dump_remote_database():
     db_file_path = '{}/{}.dump'.format(
         CONF['database_save_path'], CONF['database_name'])
-    if remote_file_exists(db_file_path):
+    if remote_file_exists(VM_IP, db_file_path):
         LOG.info('%s already exists ! ', db_file_path)
         return False
     else:
@@ -440,9 +448,43 @@ def restore_remote_database():
             CONF['database_save_path'], CONF['database_name'])
         drop_remote_database()
         create_remote_database()
-        cmd = 'echo "123"|sudo -S PGPASSWORD={} pg_restore -U {} -n public -j 8 -F c -d {} {}'.\
+        cmd = 'echo "123"|sudo -S PGPASSWORD={} pg_restore -h 127.0.0.1 -U {} -n public -j 8 -F c -d {} {}'.\
               format(CONF['password'], CONF['username'],
                      CONF['database_name'], db_file_path)
+    else:
+        raise Exception("Database Type {} Not Implemented !".format(
+            CONF['database_type']))
+    LOG.info('Start restoring database')
+    remote_exec(VM_IP, cmd)
+    LOG.info('Finish restoring database')
+
+
+@task
+def my_restore_remote_database():
+    if CONF['database_type'] == 'oracle':
+        # You must create a directory named dpdata through sqlplus in your Oracle database
+        # The following script assumes such directory exists.
+        # You may want to modify the username, password, and dump file name in the script
+        cmd = 'sh oracleScripts/restoreOracle.sh'
+    elif CONF['database_type'] == 'postgres':
+        cmd1 = ('service postgresql stop ')
+        remote_exec(VM_IP, cmd1)
+        if remote_file_exists(VM_IP, '{}/postgresql'.format(
+                CONF['database_save_path'])):
+            remote_exec(VM_IP, 'rm -r {}/postgresql')
+        cmd = ('cd {}/ && tar -xvf {}/postgresql.tar  && service postgresql restart'
+               ).format(
+            CONF['database_save_path'],
+            CONF['database_save_path'],
+            CONF['database_save_path'])
+        # remote_exec(VM_IP, remote_cmd)
+        # db_file_path = '{}/{}.dump'.format(
+        #     CONF['database_save_path'], CONF['database_name'])
+        # drop_remote_database()
+        # create_remote_database()
+        # cmd = 'echo "123"|sudo -S PGPASSWORD={} pg_restore -h 127.0.0.1 -U {} -n public -j 8 -F c -d {} {}'.\
+        #       format(CONF['password'], CONF['username'],
+        #              CONF['database_name'], db_file_path)
     else:
         raise Exception("Database Type {} Not Implemented !".format(
             CONF['database_type']))
@@ -532,6 +574,15 @@ def lhs_samples(count=10):
 
 
 @task
+def lhs_remote_samples(count=10):
+    cmd = 'cd {} && echo "123" | sudo -S python3 lhs.py {} {} {}'.format(
+        CONF['qemu_script_path'],
+        count, CONF['lhs_knob_path'], CONF['lhs_save_path'])
+    # local(cmd)
+    remote_exec(VM_IP, cmd)
+
+
+@task
 def remote_loop(iter=1):
 
     # restart qemu vm
@@ -568,7 +619,7 @@ def remote_loop(iter=1):
 
     # check remote disk usage
     if check_remote_disk_usage() > MAX_DISK_USAGE:
-        LOG.WARN('remote vm Exceeds max disk usage %s', MAX_DISK_USAGE)
+        LOG.info('remote vm Exceeds max disk usage %s', MAX_DISK_USAGE)
 
     # run controller from another process
     p = Process(target=run_remote_controller, args=())
@@ -599,7 +650,7 @@ def remote_loop(iter=1):
     # LOG.info("fabfile.remote_loop p.join method end")
 
     # add user defined target objective
-    # add_udf()
+    add_udf()
 
     # save remote result
     save_remote_dbms_result()
@@ -677,7 +728,7 @@ def loop():
     save_dbms_result()
 
     # test for code
-    exit()
+    # exit()
 
     # upload result
     upload_result()
@@ -690,44 +741,122 @@ def loop():
 
 
 @task
+def trial_loop():
+
+    # restart qemu vm
+    # restart_qemu()
+
+    # free remote vm cache
+    # free_remote_cache()
+
+    # free cache
+    free_remote_cache()
+
+    # rsync local folder to remote vm
+    # rsync_remote_folder_all()
+
+    # remove oltpbench log and controller log
+    clean_logs()
+
+    # remove oltpbench log and controller log on remote vm
+    # clean_remote_logs()
+
+    # restart database
+    restart_remote_database()
+
+    # restart remote vm database
+    # restart_remote_database()
+
+    # check disk usage
+    if check_remote_disk_usage() > MAX_DISK_USAGE:
+        LOG.WARN('Exceeds max disk usage %s', MAX_DISK_USAGE)
+
+    # run controller from another process
+    p = Process(target=run_controller, args=())
+    p.start()
+    LOG.info('Run the controller')
+
+    # run oltpbench as a background job
+    while not _ready_to_start_oltpbench():
+        pass
+    run_oltpbench_bg()
+    LOG.info('Run OLTP-Bench')
+
+    # the controller starts the first collection
+    while not _ready_to_start_controller():
+        pass
+    signal_controller()
+    LOG.info('Start the first collection')
+
+    # stop the experiment
+    while not _ready_to_shut_down_controller():
+        pass
+    signal_controller()
+    LOG.info('Start the second collection, shut down the controller')
+
+    p.join()
+
+    # add user defined target objective
+    add_udf()
+
+    # save result
+    save_dbms_result()
+
+    # test for code
+    # exit()
+
+    # upload result
+    upload_result()
+
+    # get result
+    get_remote_result()
+
+    # change config
+    change_remote_conf()
+
+
+@task
 def run_lhs():
     datadir = CONF['lhs_save_path']
     samples = glob.glob(os.path.join(datadir, 'config_*'))
 
     # dump database if it's not done before.
-    dump = dump_database()
+    dump = dump_remote_database()
 
     for i, sample in enumerate(samples):
         # reload database periodically
         if RELOAD_INTERVAL > 0:
             if i % RELOAD_INTERVAL == 0:
                 if i == 0 and dump is False:
-                    restore_database()
+                    # restore_remote_database()
+                    pass
                 elif i > 0:
-                    restore_database()
+                    restore_remote_database()
         # free cache
-        free_cache()
+        free_remote_cache()
 
-        LOG.info('\n\n Start %s-th sample %s \n\n', i, sample)
+        LOG.info('\n\n LHS:Start %s-th sample %s \n\n', i, sample)
         # check memory usage
         # check_memory_usage()
 
         # check disk usage
-        if check_disk_usage() > MAX_DISK_USAGE:
-            LOG.WARN('Exceeds max disk usage %s', MAX_DISK_USAGE)
+        if check_remote_disk_usage() > MAX_DISK_USAGE:
+            LOG.WARN('LHS:Exceeds max disk usage %s', MAX_DISK_USAGE)
 
         # copy lhs-sampled config to the to-be-used config
-        cmd = 'cp {} next_config'.format(sample)
+        # cmd = 'cp {} next_config'.format(sample)
+        cmd = 'echo "123" | sudo -S scp {} root@{}:{}/next_config'.format(
+            sample, VM_IP, CONF['qemu_script_path'])
         local(cmd)
 
         # remove oltpbench log and controller log
         clean_logs()
 
         # change config
-        change_conf()
+        change_remote_conf()
 
         # restart database
-        restart_database()
+        restart_remote_database()
 
         if CONF.get('oracle_awr_enabled', False):
             # create snapshot for oracle AWR report
@@ -779,11 +908,29 @@ def run_loops(max_iter=5):
         if RELOAD_INTERVAL > 0:
             if i % RELOAD_INTERVAL == 0:
                 if i == 0 and dump is False:
-                    restore_database()
+                    restore_remote_database()
                 elif i > 0:
-                    restore_database()
+                    restore_remote_database()
         LOG.info('The %s-th Loop Starts / Total Loops %s', i + 1, max_iter)
         loop()
+        LOG.info('The %s-th Loop Ends / Total Loops %s', i + 1, max_iter)
+
+
+@task
+def run_trials(max_iter=5):
+    # dump database if it's not done before.
+    dump = dump_remote_database()
+
+    for i in range(int(max_iter)):
+        if RELOAD_INTERVAL > 0:
+            if i % RELOAD_INTERVAL == 0:
+                if i == 0 and dump is False:
+                    pass
+                    # restore_remote_database()
+                elif i > 0:
+                    restore_remote_database()
+        LOG.info('The %s-th Loop Starts / Total Loops %s', i + 1, max_iter)
+        trial_loop()
         LOG.info('The %s-th Loop Ends / Total Loops %s', i + 1, max_iter)
 
 
@@ -802,12 +949,6 @@ def run_remote_loops(max_iter=1):
         LOG.info('The %s-th remote Loop Starts / Total Loops %s', i + 1, max_iter)
         remote_loop(i)
         LOG.info('The %s-th remote Loop Ends / Total Loops %s', i + 1, max_iter)
-
-
-@task
-def test_ping():
-    test_out = remote_exec('192.168.122.1', 'ping -c 2 192.168.122.77')
-    LOG.info("test_out={}".format(test_out))
 
 
 @task

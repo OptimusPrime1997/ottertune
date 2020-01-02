@@ -51,6 +51,7 @@ var/
 *.rar
 *.tar
 *.zip
+*.dump
 
 # PyInstaller #
 ###############
@@ -87,6 +88,11 @@ ENV/
 .pydevproject
 .settings
 .classpath
+*.log
+.vscode
+*.pid
+client/driver/results
+client/controller/pid.txt
 
 # Intellij and PyCharm #
 .idea
