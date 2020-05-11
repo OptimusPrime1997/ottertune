@@ -1,9 +1,9 @@
 {
-  "database_type" : "postgres",
-  "database_url" : "jdbc:postgresql://localhost:5432/postgres",
-  "username" : "MY_DATABASE_USERNAME",
-  "password" : "MY_DATABASE_PASSWORD",
-  "upload_code" : "DEPRECATED",
-  "upload_url" : "DEPRECATED",
-  "workload_name" : "workload_name"
+  "database_type": "postgres",
+  "database_url": "jdbc:postgresql://192.168.122.131:5432/tpcc",
+  "username": "postgres",
+  "password": "test123",
+  "upload_code": "MNHICTWEPN9BKST8VQM3",
+  "upload_url": "http://192.168.122.1:8001",
+  "workload_name": "NVME_DDPG"
 }

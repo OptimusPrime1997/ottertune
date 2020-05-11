@@ -1,9 +1,11 @@
 import importlib
 import os
+import logging
 
 from fabric.api import hide, local, settings, task
 from fabric.api import get as _get, put as _put, run as _run, sudo as _sudo
 
+LOG = logging.getLogger(__name__)
 dconf = None  # pylint: disable=invalid-name
 
 
@@ -36,14 +38,16 @@ def load_driver_conf():
 
         elif dconf.HOST_CONN == 'docker':
             if not dconf.CONTAINER_NAME:
-                raise ValueError("CONTAINER_NAME must be set if HOST_CONN=docker")
+                raise ValueError(
+                    "CONTAINER_NAME must be set if HOST_CONN=docker")
             login_str = 'localhost'
 
         else:
-            raise ValueError(("Invalid HOST_CONN: {}. Valid values are "
-                              "'local', 'remote', or 'docker'.").format(dconf.HOST_CONN))
+            raise ValueError(
+                ("Invalid HOST_CONN: {}. Valid values are "
+                 "'local', 'remote', or 'docker'.").format(dconf.HOST_CONN))
         dconf.LOGIN = login_str
-
+    LOG.info("dconf.LOGIN=", login_str)
     return dconf
 
 
@@ -80,7 +84,9 @@ def run(cmd, capture=True, **kwargs):
                 cmdd = cmd[:-1].strip()
                 opts = '-d '
             res = local('docker exec {} -ti {} /bin/bash -c "{}"'.format(
-                opts, dconf.CONTAINER_NAME, cmdd), capture=capture, **kwargs)
+                opts, dconf.CONTAINER_NAME, cmdd),
+                        capture=capture,
+                        **kwargs)
     except TypeError as e:
         err = str(e).strip()
         if 'unexpected keyword argument' in err:
@@ -111,7 +117,8 @@ def sudo(cmd, user=None, capture=True, **kwargs):
         if user == 'root':
             opts += ' -w /'
         res = local('docker exec {} {} /bin/bash -c "{}"'.format(
-            opts, dconf.CONTAINER_NAME, cmd), capture=capture)
+            opts, dconf.CONTAINER_NAME, cmd),
+                    capture=capture)
 
     return res
 
@@ -125,9 +132,11 @@ def get(remote_path, local_path, use_sudo=False):
     elif dconf.HOST_CONN == 'local':
         pre_cmd = 'sudo ' if use_sudo else ''
         opts = '-r' if os.path.isdir(remote_path) else ''
-        res = local('{}cp {} {} {}'.format(pre_cmd, opts, remote_path, local_path))
+        res = local('{}cp {} {} {}'.format(pre_cmd, opts, remote_path,
+                                           local_path))
     else:  # docker
-        res = local('docker cp {}:{} {}'.format(dconf.CONTAINER_NAME, remote_path, local_path))
+        res = local('docker cp {}:{} {}'.format(dconf.CONTAINER_NAME,
+                                                remote_path, local_path))
     return res
 
 
@@ -140,9 +149,12 @@ def put(local_path, remote_path, use_sudo=False):
     elif dconf.HOST_CONN == 'local':
         pre_cmd = 'sudo ' if use_sudo else ''
         opts = '-r' if os.path.isdir(local_path) else ''
-        res = local('{}cp {} {} {}'.format(pre_cmd, opts, local_path, remote_path))
+        res = local('{}cp {} {} {}'.format(pre_cmd, opts, local_path,
+                                           remote_path))
     else:  # docker
-        res = local('docker cp {} {}:{}'.format(local_path, dconf.CONTAINER_NAME, remote_path))
+        res = local('docker cp {} {}:{}'.format(local_path,
+                                                dconf.CONTAINER_NAME,
+                                                remote_path))
     return res
 
 
@@ -158,7 +170,8 @@ def run_sql_script(scriptfile, *args):
                 sudo('chown -R oracle:oinstall /home/oracle/oracleScripts')
         res = run('sh {} {}'.format(remote_path, ' '.join(args)))
     else:
-        raise Exception("Database Type {} Not Implemented !".format(dconf.DB_TYPE))
+        raise Exception("Database Type {} Not Implemented !".format(
+            dconf.DB_TYPE))
     return res
 
 

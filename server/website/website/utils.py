@@ -33,7 +33,6 @@ LOG = logging.getLogger(__name__)
 
 
 class JSONUtil(object):
-
     @staticmethod
     def loads(config_str):
         return json.loads(config_str,
@@ -65,7 +64,6 @@ class JSONUtil(object):
 
 
 class MediaUtil(object):
-
     @staticmethod
     def upload_code_generator(size=20,
                               chars=string.ascii_uppercase + string.digits):
@@ -74,7 +72,6 @@ class MediaUtil(object):
 
 
 class TaskUtil(object):
-
     @staticmethod
     def get_task_ids_from_tuple(task_tuple):
         task_res = celery.result.result_from_tuple(task_tuple)
@@ -91,8 +88,11 @@ class TaskUtil(object):
         if isinstance(task_ids, str):
             task_ids = task_ids.split(',')
         preserved = Case(*[
-            When(task_id=task_id, then=pos) for pos, task_id in enumerate(task_ids)])
-        return TaskMeta.objects.filter(task_id__in=task_ids).order_by(preserved)
+            When(task_id=task_id, then=pos)
+            for pos, task_id in enumerate(task_ids)
+        ])
+        return TaskMeta.objects.filter(
+            task_id__in=task_ids).order_by(preserved)
 
     @staticmethod
     def get_task_status(tasks, num_tasks):
@@ -107,8 +107,9 @@ class TaskUtil(object):
                 break
             else:
                 if status not in ('PENDING', 'RECEIVED', 'STARTED'):
-                    LOG.warning("Task %s: invalid task status: '%s' (task_id=%s)",
-                                task.id, status, task.task_id)
+                    LOG.warning(
+                        "Task %s: invalid task status: '%s' (task_id=%s)",
+                        task.id, status, task.task_id)
                 overall_status = status
 
         if num_tasks > 0 and num_tasks == num_completed:
@@ -118,14 +119,16 @@ class TaskUtil(object):
 
 
 class DataUtil(object):
-
     @staticmethod
     def get_knob_bounds(knob_labels, session):
         minvals = []
         maxvals = []
         for _, knob in enumerate(knob_labels):
-            knob_object = KnobCatalog.objects.get(dbms=session.dbms, name=knob, tunable=True)
-            knob_session_object = SessionKnob.objects.filter(knob=knob_object, session=session,
+            knob_object = KnobCatalog.objects.get(dbms=session.dbms,
+                                                  name=knob,
+                                                  tunable=True)
+            knob_session_object = SessionKnob.objects.filter(knob=knob_object,
+                                                             session=session,
                                                              tunable=True)
             if knob_object.vartype is VarType.ENUM:
                 enumvals = knob_object.enumvals.split(',')
@@ -147,7 +150,8 @@ class DataUtil(object):
     @staticmethod
     def aggregate_data(results):
         knob_labels = list(JSONUtil.loads(results[0].knob_data.data).keys())
-        metric_labels = list(JSONUtil.loads(results[0].metric_data.data).keys())
+        metric_labels = list(
+            JSONUtil.loads(results[0].metric_data.data).keys())
         X_matrix = np.empty((len(results), len(knob_labels)), dtype=float)
         y_matrix = np.empty((len(results), len(metric_labels)), dtype=float)
         rowlabels = np.empty(len(results), dtype=int)
@@ -157,16 +161,14 @@ class DataUtil(object):
                 continue
             param_data = JSONUtil.loads(result.knob_data.data)
             if len(param_data) != len(knob_labels):
-                raise Exception(
-                    ("Incorrect number of knobs "
-                     "(expected={}, actual={})").format(len(knob_labels),
-                                                        len(param_data)))
+                raise Exception(("Incorrect number of knobs "
+                                 "(expected={}, actual={})").format(
+                                     len(knob_labels), len(param_data)))
             metric_data = JSONUtil.loads(result.metric_data.data)
             if len(metric_data) != len(metric_labels):
-                raise Exception(
-                    ("Incorrect number of metrics "
-                     "(expected={}, actual={})").format(len(metric_labels),
-                                                        len(metric_data)))
+                raise Exception(("Incorrect number of metrics "
+                                 "(expected={}, actual={})").format(
+                                     len(metric_labels), len(metric_data)))
             X_matrix[i, :] = [param_data[l] for l in knob_labels]
             y_matrix[i, :] = [metric_data[l] for l in metric_labels]
             rowlabels[i] = result.pk
@@ -200,7 +202,7 @@ class DataUtil(object):
         for i, count in enumerate(cts):
             if count == 1:
                 y_unique[i, :] = y_matrix[idxs[i], :]
-                rowlabels_unique[i] = (rowlabels[idxs[i]],)
+                rowlabels_unique[i] = (rowlabels[idxs[i]], )
             else:
                 dup_idxs = ix[invs == i]
                 y_unique[i, :] = np.median(y_matrix[dup_idxs, :], axis=0)
@@ -217,13 +219,13 @@ class DataUtil(object):
         dbms_info = DBMSCatalog.objects.filter(pk=dbms.pk)
 
         if len(dbms_info) == 0:
-            raise Exception("DBMSCatalog cannot find dbms {}".format(dbms.full_name()))
+            raise Exception("DBMSCatalog cannot find dbms {}".format(
+                dbms.full_name()))
         full_dbms_name = dbms_info[0]
 
         for i, knob_name in enumerate(featured_knobs):
             # knob can be uniquely identified by (dbms, knob_name)
-            knobs = KnobCatalog.objects.filter(name=knob_name,
-                                               dbms=dbms)
+            knobs = KnobCatalog.objects.filter(name=knob_name, dbms=dbms)
             if len(knobs) == 0:
                 raise Exception(
                     "KnobCatalog cannot find knob of name {} in {}".format(
@@ -249,23 +251,25 @@ class DataUtil(object):
 
         n_values = np.array(n_values)
         cat_knob_indices = np.array(cat_knob_indices)
-        categorical_info = {'n_values': n_values,
-                            'categorical_features': cat_knob_indices,
-                            'cat_columnlabels': cat_knob_names,
-                            'noncat_columnlabels': noncat_knob_names,
-                            'binary_vars': binary_knob_indices}
+        categorical_info = {
+            'n_values': n_values,
+            'categorical_features': cat_knob_indices,
+            'cat_columnlabels': cat_knob_names,
+            'noncat_columnlabels': noncat_knob_names,
+            'binary_vars': binary_knob_indices
+        }
         return categorical_info
 
 
 class ConversionUtil(object):
 
     DEFAULT_BYTES_SYSTEM = (
-        (1024 ** 5, 'PB'),
-        (1024 ** 4, 'TB'),
-        (1024 ** 3, 'GB'),
-        (1024 ** 2, 'MB'),
-        (1024 ** 1, 'kB'),
-        (1024 ** 0, 'B'),
+        (1024**5, 'PB'),
+        (1024**4, 'TB'),
+        (1024**3, 'GB'),
+        (1024**2, 'MB'),
+        (1024**1, 'kB'),
+        (1024**0, 'B'),
     )
 
     DEFAULT_TIME_SYSTEM = (
@@ -308,13 +312,17 @@ class ConversionUtil(object):
             if suffix == min_suffix:
                 if value < factor:
                     if i + 1 >= len(system):
-                        LOG.warning("Error converting value '%s': min_suffix='%s' at index='%s' "
-                                    "is already the smallest suffix.", value, min_suffix, i)
+                        LOG.warning(
+                            "Error converting value '%s': min_suffix='%s' at index='%s' "
+                            "is already the smallest suffix.", value,
+                            min_suffix, i)
                         return value
 
                     min_suffix = system[i + 1][1]
-                    LOG.warning('The value is smaller than the min factor: %s < %s%s. '
-                                'Setting min_suffix=%s...', value, factor, suffix, min_suffix)
+                    LOG.warning(
+                        'The value is smaller than the min factor: %s < %s%s. '
+                        'Setting min_suffix=%s...', value, factor, suffix,
+                        min_suffix)
                 else:
                     min_factor = factor
                     unit = min_suffix
@@ -324,8 +332,9 @@ class ConversionUtil(object):
             mod_system.append((factor, suffix))
 
         if min_factor is None:
-            raise ValueError('Invalid min suffix for system: suffix={}, system={}'.format(
-                min_suffix, system))
+            raise ValueError(
+                'Invalid min suffix for system: suffix={}, system={}'.format(
+                    min_suffix, system))
 
         for factor, suffix in mod_system:
             adj_factor = factor / min_factor
@@ -338,7 +347,6 @@ class ConversionUtil(object):
 
 
 class LabelUtil(object):
-
     @staticmethod
     def style_labels(label_map, style=LabelStyleType.DEFAULT_STYLE):
         style_labels = {}
@@ -396,7 +404,8 @@ def dump_debug_info(session, pretty_print=False):
         'knob_data', 'metric_data').order_by('creation_time')
     results = []
 
-    for result, result_dict in zip(result_instances, result_instances.values()):
+    for result, result_dict in zip(result_instances,
+                                   result_instances.values()):
         assert result.pk == result_dict['id']
         result_dict = OrderedDict(result_dict)
         next_config = result.next_configuration or '{}'
@@ -421,14 +430,16 @@ def dump_debug_info(session, pretty_print=False):
 
     # Log messages written to the database using django-db-logger
     logs = StatusLog.objects.filter(create_datetime__gte=session.creation_time)
-    logger_names = logs.order_by().values_list('logger_name', flat=True).distinct()
+    logger_names = logs.order_by().values_list('logger_name',
+                                               flat=True).distinct()
 
     # Write log files at app scope (e.g., django, website, celery)
     logger_names = set([l.split('.', 1)[0] for l in logger_names])
 
     for logger_name in logger_names:
-        log_values = list(logs.filter(logger_name__startswith=logger_name).order_by(
-            'create_datetime').values())
+        log_values = list(
+            logs.filter(logger_name__startswith=logger_name).order_by(
+                'create_datetime').values())
         for lv in log_values:
             lv['level'] = logging.getLevelName(lv['level'])
         files['logs/{}.log'.format(logger_name)] = log_values
@@ -498,6 +509,7 @@ def model_to_dict2(m, exclude=None):
 def check_and_run_celery():
     celery_status = os.popen('python3 manage.py celery inspect ping').read()
     if 'pong' in celery_status:
+        LOG.info('celery is running')
         return 'celery is running'
 
     rabbitmq_status = os.popen('telnet localhost 5672').read()
@@ -513,8 +525,10 @@ def check_and_run_celery():
         retries += 1
         call_command('stopcelery')
         os.popen('python3 manage.py startcelery &')
-        time.sleep(30 * retries)
-        celery_status = os.popen('python3 manage.py celery inspect ping').read()
+        # time.sleep(30 * retries)
+        time.sleep(10)
+        celery_status = os.popen(
+            'python3 manage.py celery inspect ping').read()
         if 'pong' in celery_status:
             LOG.info('Successfully start celery.')
             return 'celery stopped but is restarted successfully'
@@ -533,9 +547,14 @@ def git_hash():
                 break
     else:
         try:
-            p = Popen("git log -1 --format=format:%H", shell=True, stdout=PIPE, stderr=PIPE)
+            p = Popen("git log -1 --format=format:%H",
+                      shell=True,
+                      stdout=PIPE,
+                      stderr=PIPE)
             sha = p.communicate()[0].decode('utf-8')
         except OSError as e:
-            LOG.warning("Failed to get git commit hash.\n\n%s\n\n", e, exc_info=True)
+            LOG.warning("Failed to get git commit hash.\n\n%s\n\n",
+                        e,
+                        exc_info=True)
 
     return sha

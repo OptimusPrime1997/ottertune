@@ -1,0 +1,20 @@
+{
+  "celery_status": "SUCCESS",
+  "result_id": 154,
+  "message": "Celery successfully recommended the next configuration",
+  "errors": [],
+  "info": "INFO: ddpg",
+  "status": "good",
+  "recommendation": {
+    "archive_mode": "off",
+    "autovacuum": "on",
+    "effective_cache_size": "939306kB",
+    "maintenance_work_mem": "11786498kB",
+    "max_wal_size": "4800MB",
+    "max_worker_processes": 8,
+    "shared_buffers": "11961810kB",
+    "temp_buffers": "227137kB",
+    "wal_buffers": "7792kB",
+    "work_mem": "42256kB"
+  }
+}

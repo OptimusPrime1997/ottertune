@@ -14,10 +14,12 @@ from collections import namedtuple
 from fabric.api import env, local, quiet, settings, task
 from fabric.state import output as fabric_output
 
-from website.settings import DATABASES, PROJECT_ROOT
+from os.path import dirname, abspath
+
+# from website.settings import DATABASES, PROJECT_ROOT
+# PROJECT_ROOT = dirname(dirname(dirname(abspath(__file__))))
 
 LOG = logging.getLogger(__name__)
-
 
 # Fabric environment settings
 env.hosts = ['localhost']
@@ -28,7 +30,6 @@ fabric_output.update({
 
 Status = namedtuple('Status', ['RUNNING', 'STOPPED'])
 STATUS = Status(0, 1)
-
 
 # Setup and base commands
 RABBITMQ_CMD = 'sudo rabbitmqctl {action}'.format
@@ -65,17 +66,20 @@ def status_rabbitmq():
 def start_celery():
     if status_rabbitmq() == STATUS.STOPPED:
         start_rabbitmq()
-    local('python manage.py celery worker --detach --loglevel=info --pool=threads')
+    local(
+        'python manage.py celery worker --detach --loglevel=info --pool=threads'
+    )
 
 
 @task
 def stop_celery():
     with settings(warn_only=True), quiet():
-        local('kill -9 `ps auxww | grep \'celery worker\' | awk \'{print $2}\'`')
+        local(
+            'kill -9 `ps auxww | grep \'celery worker\' | awk \'{print $2}\'`')
 
 
 @task
-def start_debug_server(host="0.0.0.0", port=8000):
+def start_debug_server(host="0.0.0.0", port=8001):
     stop_celery()
     start_celery()
     local('python manage.py runserver {}:{}'.format(host, port))
@@ -132,28 +136,35 @@ def create_test_website():
 @task
 def setup_test_user():
     # Adds a test user to an existing website with two empty sessions
-    local(("echo \"from django.contrib.auth.models import User; "
-           "User.objects.filter(email='user@email.com').delete(); "
-           "User.objects.create_superuser('user', 'user@email.com', 'abcd123')\" "
-           "| python manage.py shell"))
+    local((
+        "echo \"from django.contrib.auth.models import User; "
+        "User.objects.filter(email='user@email.com').delete(); "
+        "User.objects.create_superuser('user', 'user@email.com', 'abcd123')\" "
+        "| python manage.py shell"))
 
     local("python manage.py loaddata test_user_sessions.json")
 
 
 @task
-def generate_and_load_data(n_workload, n_samples_per_workload, upload_code,
+def generate_and_load_data(n_workload,
+                           n_samples_per_workload,
+                           upload_code,
                            random_seed=''):
-    local('python script/controller_simulator/data_generator.py {} {} {}'.format(
-        n_workload, n_samples_per_workload, random_seed))
-    local(('python script/controller_simulator/upload_data.py '
-           'script/controller_simulator/generated_data {}').format(upload_code))
+    local(
+        'python script/controller_simulator/data_generator.py {} {} {}'.format(
+            n_workload, n_samples_per_workload, random_seed))
+    local(
+        ('python script/controller_simulator/upload_data.py '
+         'script/controller_simulator/generated_data {}').format(upload_code))
 
 
 @task
 def dumpdata(dumppath):
     # Helper function for calling Django's loaddata function that excludes
     # the static fixture data from being dumped
-    excluded_models = ['DBMSCatalog', 'KnobCatalog', 'MetricCatalog', 'Hardware']
+    excluded_models = [
+        'DBMSCatalog', 'KnobCatalog', 'MetricCatalog', 'Hardware'
+    ]
     cmd = 'python manage.py dumpdata --natural-foreign --natural-primary'
     for model in excluded_models:
         cmd += ' --exclude website.' + model
@@ -166,6 +177,7 @@ def run_background_tasks():
     # Runs the background tasks just once.
     cmd = ("from website.tasks import run_background_tasks; "
            "run_background_tasks()")
-    local(('export PYTHONPATH={}\:$PYTHONPATH; '  # pylint: disable=anomalous-backslash-in-string
-           'django-admin shell --settings=website.settings '
-           '-c\"{}\"').format(PROJECT_ROOT, cmd))
+    local((
+        'export PYTHONPATH={}\:$PYTHONPATH; '  # pylint: disable=anomalous-backslash-in-string
+        'django-admin shell --settings=website.settings '
+        '-c\"{}\"').format(PROJECT_ROOT, cmd))

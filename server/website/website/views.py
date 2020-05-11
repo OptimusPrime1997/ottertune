@@ -484,7 +484,7 @@ def handle_result_files(session, files, execution_times=None):
     # Load the contents of the controller's summary file
     summary = JSONUtil.loads(files['summary'])
 
-    # Find worst throughput
+    # Find worst throughput,and set penalty target value
     past_metrics = MetricData.objects.filter(session=session)
     metric_meta = target_objectives.get_instance(session.dbms.pk, session.target_objective)
     if len(past_metrics) > 0:
@@ -509,7 +509,7 @@ def handle_result_files(session, files, execution_times=None):
         else:
             penalty_target_value = worst_target_value * penalty_factor
 
-    # Update the past invalid results
+    # Update the past invalid results,set target_object value as penalty_target_value
     for past_metric in past_metrics:
         if '*' in past_metric.name:
             past_metric_data = JSONUtil.loads(past_metric.data)
@@ -733,7 +733,8 @@ def handle_result_files(session, files, execution_times=None):
             ExecutionTime.objects.bulk_create(batch)
         except Exception:  # pylint: disable=broad-except
             LOG.warning("Error parsing execution times:\n%s", execution_times, exc_info=True)
-
+    LOG.info("Result stored successfully! Running tuner...({}, status={}) Result ID:{}"
+                        .format(celery_status, response.status, result_id))
     return HttpResponse("Result stored successfully! Running tuner...({}, status={}) Result ID:{}"
                         .format(celery_status, response.status, result_id))
 

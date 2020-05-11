@@ -205,8 +205,14 @@ MYSQL_COMPRESSION = False
 # RABBITMQ/CELERY CONFIGURATION
 # ==============================================
 
+#modify
+djcelery.setup_loader()
+
 # Broker URL for RabbitMq
 BROKER_URL = 'amqp://guest:guest@localhost:5672//'
+# modify
+# CELERY_IMPORTS = ('website.tasks')
+CELERY_TIMEZONE = 'Asia/Shanghai'
 
 # Enable finer-grained reporting: will report 'started' when
 # task is executed by a worker.
@@ -238,13 +244,13 @@ CELERY_DISABLE_RATE_LIMITS = True
 CELERYD_MAX_TASKS_PER_CHILD = 20
 
 # Number of concurrent workers. Defaults to the number of CPUs.
-# CELERYD_CONCURRENCY = 8
+CELERYD_CONCURRENCY = 8
 
 # Late ack means the task messages will be acknowledged after
 # the task has been executed, not just before
 CELERY_ACKS_LATE = False
 
-djcelery.setup_loader()
+# djcelery.setup_loader()
 
 # ==============================================
 # LOGGING CONFIGURATION

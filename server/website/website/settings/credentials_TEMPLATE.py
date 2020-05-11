@@ -23,11 +23,11 @@ SECRET_KEY = 'ADD ME!!'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'ottertune',
-        'USER': 'ADD ME!!',
-        'PASSWORD': 'ADD ME!!',
-        'HOST': '',
-        'PORT': '',
+        'NAME': 'ottertune_ddpg',
+        'USER': 'dbuser',
+        'PASSWORD': 'test123',
+        'HOST': 'localhost',
+        'PORT': '8081',
         'OPTIONS': {
             'init_command': "SET sql_mode='STRICT_TRANS_TABLES',innodb_strict_mode=1",
         },
@@ -39,7 +39,8 @@ DATABASES = {
 # ==============================================
 
 # Can override the DEBUG setting here
-DEBUG = False
+# DEBUG = False
+DEBUG = True
 
 # ==============================================
 # MANAGER CONFIGURATION
@@ -58,4 +59,9 @@ MANAGERS = ADMINS
 
 # Hosts/domain names that are valid for this site; required if DEBUG is False
 # See https://docs.djangoproject.com/en/1.5/ref/settings/#allowed-hosts
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['*', '0.0.0.0', '10.0.2.41', '10.0.2.33',
+                 '127.0.0.1', '192.168.122.77',
+                 '192.168.122.1', '10.0.3.177',
+                 '*.*.*.*',
+                 '10.0.14.35',
+                 '10.0.*.*']
