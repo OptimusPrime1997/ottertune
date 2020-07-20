@@ -12,3 +12,9 @@ CHECK_CELERY = False
 
 # address categorical knobs (enum, boolean)
 ENABLE_DUMMY_ENCODER = False
+
+# the threshold of check smooth
+SMOOTH_THRESHOLD = 0.015
+
+# continue count string
+CONTINUE_COUNT = 'continue_count'

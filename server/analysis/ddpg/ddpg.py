@@ -21,38 +21,30 @@ from analysis.util import get_analysis_logger
 LOG = get_analysis_logger(__name__)
 
 
+# actor net
 class Actor(nn.Module):
-
     def __init__(self, n_states, n_actions, hidden_sizes, use_default):
         super(Actor, self).__init__()
+        # n_statesx128x128x128x64xn_actions(4 layers)
         if use_default:
-            self.layers = nn.Sequential(
-                nn.Linear(n_states, 128),
-                nn.LeakyReLU(negative_slope=0.2),
-                nn.BatchNorm1d(hidden_sizes[0]),
-                nn.Linear(128, 128),
-                nn.Tanh(),
-                nn.Dropout(0.3),
-                nn.Linear(128, 128),
-                nn.Tanh(),
-                nn.Linear(128, 64),
-                nn.Linear(64, n_actions)
-            )
+            self.layers = nn.Sequential(nn.Linear(n_states, 128),
+                                        nn.LeakyReLU(negative_slope=0.2),
+                                        nn.BatchNorm1d(hidden_sizes[0]),
+                                        nn.Linear(128, 128), nn.Tanh(),
+                                        nn.Dropout(0.3), nn.Linear(128, 128),
+                                        nn.Tanh(), nn.Linear(128, 64),
+                                        nn.Linear(64, n_actions))
         else:
+            # n_statesxhidden_sizes[0]xhidden_sizes[1]xhidden_sizes[2]xn_actions(4 layers)
             self.layers = nn.Sequential(
                 nn.Linear(n_states, hidden_sizes[0]),
                 nn.LeakyReLU(negative_slope=0.2),
                 nn.BatchNorm1d(hidden_sizes[0]),
-                nn.Linear(hidden_sizes[0], hidden_sizes[1]),
-                nn.Tanh(),
-                nn.Dropout(0.3),
-                nn.BatchNorm1d(hidden_sizes[1]),
-                nn.Linear(hidden_sizes[1], hidden_sizes[2]),
-                nn.Tanh(),
-                nn.Dropout(0.3),
-                nn.BatchNorm1d(hidden_sizes[2]),
-                nn.Linear(hidden_sizes[2], n_actions)
-            )
+                nn.Linear(hidden_sizes[0], hidden_sizes[1]), nn.Tanh(),
+                nn.Dropout(0.3), nn.BatchNorm1d(hidden_sizes[1]),
+                nn.Linear(hidden_sizes[1], hidden_sizes[2]), nn.Tanh(),
+                nn.Dropout(0.3), nn.BatchNorm1d(hidden_sizes[2]),
+                nn.Linear(hidden_sizes[2], n_actions))
         # This act layer maps the output to (0, 1)
         self.act = nn.Sigmoid()
         self._init_weights()
@@ -60,6 +52,7 @@ class Actor(nn.Module):
     def _init_weights(self):
 
         for m in self.layers:
+            # initialize weight and bias
             if isinstance(m, nn.Linear):
                 m.weight.data.normal_(0.0, 1e-2)
                 m.bias.data.uniform_(-0.1, 0.1)
@@ -71,38 +64,31 @@ class Actor(nn.Module):
 
 
 class Critic(nn.Module):
-
     def __init__(self, n_states, n_actions, hidden_sizes, use_default):
         super(Critic, self).__init__()
         self.act = nn.Tanh()
+        # state_input net and action_input net
+        # n_statesx128x256x256x256x64x1 (6 layers)
         if use_default:
             self.state_input = nn.Linear(n_states, 128)
             self.action_input = nn.Linear(n_actions, 128)
-            self.layers = nn.Sequential(
-                nn.Linear(256, 256),
-                nn.LeakyReLU(negative_slope=0.2),
-                nn.BatchNorm1d(256),
-                nn.Linear(256, 256),
-                nn.Linear(256, 64),
-                nn.Tanh(),
-                nn.Dropout(0.3),
-                nn.BatchNorm1d(64),
-                nn.Linear(64, 1)
-            )
+            self.layers = nn.Sequential(nn.Linear(256, 256),
+                                        nn.LeakyReLU(negative_slope=0.2),
+                                        nn.BatchNorm1d(256),
+                                        nn.Linear(256,
+                                                  256), nn.Linear(256, 64),
+                                        nn.Tanh(), nn.Dropout(0.3),
+                                        nn.BatchNorm1d(64), nn.Linear(64, 1))
         else:
             self.state_input = nn.Linear(n_states, hidden_sizes[0])
             self.action_input = nn.Linear(n_actions, hidden_sizes[0])
             self.layers = nn.Sequential(
                 nn.Linear(hidden_sizes[0] * 2, hidden_sizes[1]),
-                nn.LeakyReLU(negative_slope=0.2),
-                nn.Dropout(0.3),
+                nn.LeakyReLU(negative_slope=0.2), nn.Dropout(0.3),
                 nn.BatchNorm1d(hidden_sizes[1]),
-                nn.Linear(hidden_sizes[1], hidden_sizes[2]),
-                nn.Tanh(),
-                nn.Dropout(0.3),
-                nn.BatchNorm1d(hidden_sizes[2]),
-                nn.Linear(hidden_sizes[2], 1)
-            )
+                nn.Linear(hidden_sizes[1], hidden_sizes[2]), nn.Tanh(),
+                nn.Dropout(0.3), nn.BatchNorm1d(hidden_sizes[2]),
+                nn.Linear(hidden_sizes[2], 1))
         self._init_weights()
 
     def _init_weights(self):
@@ -120,29 +106,42 @@ class Critic(nn.Module):
     def forward(self, states, actions):  # pylint: disable=arguments-differ
         states = self.act(self.state_input(states))
         actions = self.act(self.action_input(actions))
-
+        # concatnate，拼接，dim=1,表示列拼接，增加列
         _input = torch.cat([states, actions], dim=1)
+        # critic net在这里使用layers层，将states和action拼接后使用
         value = self.layers(_input)
         return value
 
 
 class DDPG(object):
-
-    def __init__(self, n_states, n_actions, model_name='', alr=0.001, clr=0.001,
-                 gamma=0.9, batch_size=32, tau=0.002, shift=0, memory_size=100000,
-                 a_hidden_sizes=[128, 128, 64], c_hidden_sizes=[128, 256, 64],
+    # a(actor net) c(critic net)
+    def __init__(self,
+                 n_states,
+                 n_actions,
+                 model_name='',
+                 alr=0.001,
+                 clr=0.001,
+                 gamma=0.9,
+                 batch_size=32,
+                 tau=0.002,
+                 shift=0,
+                 memory_size=100000,
+                 a_hidden_sizes=[128, 128, 64],
+                 c_hidden_sizes=[128, 256, 64],
                  use_default=False):
-        self.n_states = n_states
-        self.n_actions = n_actions
-        self.alr = alr
-        self.clr = clr
+        #  c_hidden_sizes=[128, 256, 64],
+        self.n_states = n_states  # states number
+        self.n_actions = n_actions  # actions number
+        self.alr = alr  # actor learning reate
+        self.clr = clr  # critic learning reate
         self.model_name = model_name
         self.batch_size = batch_size
-        self.gamma = gamma
-        self.tau = tau
+        self.gamma = gamma  # discount rate
+        # 利用当前参数值的比例
+        self.tau = tau  # soft update rate
         self.a_hidden_sizes = a_hidden_sizes
         self.c_hidden_sizes = c_hidden_sizes
-        self.shift = shift
+        self.shift = shift  # value added to reward
         self.use_default = use_default
 
         self._build_network()
@@ -155,12 +154,14 @@ class DDPG(object):
         return Variable(torch.FloatTensor(x))
 
     def _build_network(self):
-        self.actor = Actor(self.n_states, self.n_actions, self.a_hidden_sizes, self.use_default)
-        self.target_actor = Actor(self.n_states, self.n_actions, self.a_hidden_sizes,
-                                  self.use_default)
-        self.critic = Critic(self.n_states, self.n_actions, self.c_hidden_sizes, self.use_default)
-        self.target_critic = Critic(self.n_states, self.n_actions, self.c_hidden_sizes,
-                                    self.use_default)
+        self.actor = Actor(self.n_states, self.n_actions, self.a_hidden_sizes,
+                           self.use_default)
+        self.target_actor = Actor(self.n_states, self.n_actions,
+                                  self.a_hidden_sizes, self.use_default)
+        self.critic = Critic(self.n_states, self.n_actions,
+                             self.c_hidden_sizes, self.use_default)
+        self.target_critic = Critic(self.n_states, self.n_actions,
+                                    self.c_hidden_sizes, self.use_default)
 
         # Copy actor's parameters
         self._update_target(self.target_actor, self.actor, tau=1.0)
@@ -169,17 +170,19 @@ class DDPG(object):
         self._update_target(self.target_critic, self.critic, tau=1.0)
 
         self.loss_criterion = nn.MSELoss()
-        self.actor_optimizer = optimizer.Adam(lr=self.alr, params=self.actor.parameters(),
+        self.actor_optimizer = optimizer.Adam(lr=self.alr,
+                                              params=self.actor.parameters(),
                                               weight_decay=1e-5)
-        self.critic_optimizer = optimizer.Adam(lr=self.clr, params=self.critic.parameters(),
+        self.critic_optimizer = optimizer.Adam(lr=self.clr,
+                                               params=self.critic.parameters(),
                                                weight_decay=1e-5)
 
     @staticmethod
     def _update_target(target, source, tau):
-        for (target_param, param) in zip(target.parameters(), source.parameters()):
-            target_param.data.copy_(
-                target_param.data * (1 - tau) + param.data * tau
-            )
+        for (target_param, param) in zip(target.parameters(),
+                                         source.parameters()):
+            target_param.data.copy_(target_param.data * (1 - tau) +
+                                    param.data * tau)
 
     def reset(self, sigma, theta):
         self.noise.reset(sigma, theta)
@@ -193,6 +196,7 @@ class DDPG(object):
 
         return idx, states, next_states, actions, rewards
 
+    # train at this method, calculate error,then add to replay_memory
     def add_sample(self, state, action, reward, next_state):
         self.critic.eval()
         self.actor.eval()
@@ -200,7 +204,9 @@ class DDPG(object):
         self.target_actor.eval()
         batch_state = self.totensor([state.tolist()])
         batch_next_state = self.totensor([next_state.tolist()])
-        current_value = self.critic(batch_state, self.totensor([action.tolist()]))
+
+        current_value = self.critic(batch_state,
+                                    self.totensor([action.tolist()]))
         target_action = self.target_actor(batch_next_state)
         target_value = self.totensor([reward]) \
             + self.target_critic(batch_next_state, target_action) * self.gamma
@@ -220,7 +226,8 @@ class DDPG(object):
         batch_rewards = self.totensor(rewards)
 
         target_next_actions = self.target_actor(batch_next_states).detach()
-        target_next_value = self.target_critic(batch_next_states, target_next_actions).detach()
+        target_next_value = self.target_critic(batch_next_states,
+                                               target_next_actions).detach()
         current_value = self.critic(batch_states, batch_actions)
         next_value = batch_rewards + target_next_value * self.gamma + self.shift
 
@@ -246,7 +253,7 @@ class DDPG(object):
 
         self.actor_optimizer.step()
         self.critic.train()
-
+        # 用current net更新target net
         self._update_target(self.target_critic, self.critic, tau=self.tau)
         self._update_target(self.target_actor, self.actor, tau=self.tau)
 
@@ -258,6 +265,7 @@ class DDPG(object):
         self.actor.train()
         action = act.data.numpy()
         action += self.noise.noise()
+        # clip限制范围为[0,1],超过边界为边界值
         return action.clip(0, 1)
 
     def set_model(self, actor_dict, critic_dict):
@@ -265,4 +273,5 @@ class DDPG(object):
         self.critic.load_state_dict(pickle.loads(critic_dict))
 
     def get_model(self):
-        return pickle.dumps(self.actor.state_dict()), pickle.dumps(self.critic.state_dict())
+        return pickle.dumps(self.actor.state_dict()), pickle.dumps(
+            self.critic.state_dict())

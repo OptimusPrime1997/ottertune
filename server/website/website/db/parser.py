@@ -52,9 +52,11 @@ def convert_dbms_knobs(dbms_id, knobs, knob_catalog=None):
     return _get(dbms_id).convert_dbms_knobs(knobs, knob_catalog)
 
 
-def convert_dbms_metrics(dbms_id, numeric_metrics, observation_time, target_objective):
-    return _get(dbms_id).convert_dbms_metrics(
-        numeric_metrics, observation_time, target_objective)
+def convert_dbms_metrics(dbms_id, numeric_metrics, observation_time,
+                         target_objective):
+    return _get(dbms_id).convert_dbms_metrics(numeric_metrics,
+                                              observation_time,
+                                              target_objective)
 
 
 def parse_dbms_knobs(dbms_id, knobs):
@@ -74,5 +76,5 @@ def format_dbms_knobs(dbms_id, knobs):
 
 
 def calculate_change_in_metrics(dbms_id, metrics_start, metrics_end):
-    return _get(dbms_id).calculate_change_in_metrics(
-        metrics_start, metrics_end)
+    return _get(dbms_id).calculate_change_in_metrics(metrics_start,
+                                                     metrics_end)

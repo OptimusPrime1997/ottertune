@@ -10,14 +10,13 @@ from collections import OrderedDict
 from website.models import KnobCatalog, MetricCatalog
 from website.types import BooleanType, KnobUnitType, MetricType, VarType
 from website.utils import ConversionUtil
-from .. import target_objectives
+from .. import target_objectives, LATENCY_99
 
 LOG = logging.getLogger(__name__)
 
 
 # pylint: disable=no-self-use
 class BaseParser:
-
     def __init__(self, dbms_obj):
         self.dbms_id = int(dbms_obj.pk)
 
@@ -109,7 +108,8 @@ class BaseParser:
     def convert_dbms_knobs(self, knobs, knob_catalog=None):
         knob_data = {}
         if knob_catalog is None:
-            knob_catalog = KnobCatalog.objects.filter(dbms__id=self.dbms_id, tunable=True)
+            knob_catalog = KnobCatalog.objects.filter(dbms__id=self.dbms_id,
+                                                      tunable=True)
         for metadata in knob_catalog:
             name = metadata.name
             if name not in knobs:
@@ -126,9 +126,9 @@ class BaseParser:
                 if not self._check_knob_bool_val(value):
                     raise Exception('Knob boolean value not valid! '
                                     'Boolean values should be one of: {}, '
-                                    'but the actual value is: {}'
-                                    .format(self.valid_boolean_val_to_string(),
-                                            str(value)))
+                                    'but the actual value is: {}'.format(
+                                        self.valid_boolean_val_to_string(),
+                                        str(value)))
                 conv_value = self.convert_bool(value, metadata)
 
             elif metadata.vartype == VarType.ENUM:
@@ -138,17 +138,17 @@ class BaseParser:
                 conv_value = self.convert_integer(value, metadata)
                 if not self._check_knob_num_in_range(conv_value, metadata):
                     raise Exception('Knob integer num value not in range! '
-                                    'min: {}, max: {}, actual: {}'
-                                    .format(metadata.minval,
-                                            metadata.maxval, str(conv_value)))
+                                    'min: {}, max: {}, actual: {}'.format(
+                                        metadata.minval, metadata.maxval,
+                                        str(conv_value)))
 
             elif metadata.vartype == VarType.REAL:
                 conv_value = self.convert_real(value, metadata)
                 if not self._check_knob_num_in_range(conv_value, metadata):
                     raise Exception('Knob real num value not in range! '
-                                    'min: {}, max: {}, actual: {}'
-                                    .format(metadata.minval,
-                                            metadata.maxval, str(conv_value)))
+                                    'min: {}, max: {}, actual: {}'.format(
+                                        metadata.minval, metadata.maxval,
+                                        str(conv_value)))
 
             elif metadata.vartype == VarType.STRING:
                 conv_value = self.convert_string(value, metadata)
@@ -157,11 +157,12 @@ class BaseParser:
                 conv_value = self.convert_timestamp(value, metadata)
 
             else:
-                raise Exception(
-                    'Unknown variable type: {}'.format(metadata.vartype))
+                raise Exception('Unknown variable type: {}'.format(
+                    metadata.vartype))
 
             if conv_value is None:
-                raise Exception('Param value for {} cannot be null'.format(name))
+                raise Exception(
+                    'Param value for {} cannot be null'.format(name))
             knob_data[name] = conv_value
 
         return knob_data
@@ -173,10 +174,12 @@ class BaseParser:
         maxval = float(mdata.maxval)
         if fix_knob_range:
             if minval > value:
-                LOG.debug("Changing knob %s minval from %f to %f", mdata.name, minval, value)
+                LOG.debug("Changing knob %s minval from %f to %f", mdata.name,
+                          minval, value)
                 mdata.minval = str(value)
             if maxval < value:
-                LOG.debug("Changing knob %s maxval from %f to %f", mdata.name, maxval, value)
+                LOG.debug("Changing knob %s maxval from %f to %f", mdata.name,
+                          maxval, value)
                 mdata.maxval = str(value)
             mdata.save()
         return float(mdata.minval) <= value <= float(mdata.maxval)
@@ -186,7 +189,9 @@ class BaseParser:
             value = value.lower()
         return value in self.valid_true_val or value in self.valid_false_val
 
-    def convert_dbms_metrics(self, metrics, observation_time, target_objective):
+    def convert_dbms_metrics(self, metrics, observation_time,
+                             target_objective):
+        # LOG.warn("base parser.convert_dbms_metrics={}".format(metrics))
         metric_data = {}
         # Same as metric_data except COUNTER metrics are not divided by the time
         base_metric_data = {}
@@ -216,8 +221,11 @@ class BaseParser:
                 base_metric_data[name] = converted
                 metric_data[name] = converted
             else:
-                raise ValueError(
-                    'Unknown metric type for {}: {}'.format(name, metadata.metric_type))
+                raise ValueError('Unknown metric type for {}: {}'.format(
+                    name, metadata.metric_type))
+        #add LATENCY_99 to metric_data
+        metric_data[LATENCY_99] = metrics[LATENCY_99]
+        base_metric_data[LATENCY_99] = metrics[LATENCY_99]
 
         target_list = target_objectives.get_all(self.dbms_id)
         if target_objective not in target_list:
@@ -233,7 +241,9 @@ class BaseParser:
 
     def extract_valid_variables(self, variables, catalog, default_value=None):
         valid_variables = {}
-        diff_log = OrderedDict([(k, []) for k in ('miscapitalized', 'extra', 'missing')])
+        diff_log = OrderedDict([
+            (k, []) for k in ('miscapitalized', 'extra', 'missing')
+        ])
         lc_catalog = {k.lower(): v for k, v in catalog.items()}
 
         # First check that the names of all variables are valid (i.e., listed
@@ -281,13 +291,15 @@ class BaseParser:
             if sub_vars is None:
                 continue
             if scope == 'global':
-                valid_variables.update(self.parse_helper(scope, valid_variables, sub_vars))
+                valid_variables.update(
+                    self.parse_helper(scope, valid_variables, sub_vars))
             elif scope == 'local':
                 for _, viewnames in list(sub_vars.items()):
                     for viewname, objnames in list(viewnames.items()):
                         for _, view_vars in list(objnames.items()):
-                            valid_variables.update(self.parse_helper(
-                                scope, valid_variables, {viewname: view_vars}))
+                            valid_variables.update(
+                                self.parse_helper(scope, valid_variables,
+                                                  {viewname: view_vars}))
             else:
                 raise Exception('Unsupported variable scope: {}'.format(scope))
         return valid_variables
@@ -299,7 +311,10 @@ class BaseParser:
             assert len(valid_knobs[k]) == 1
             valid_knobs[k] = valid_knobs[k][0]
         # Extract all valid knobs
-        knob_catalog = {k.name: k for k in KnobCatalog.objects.filter(dbms__id=self.dbms_id)}
+        knob_catalog = {
+            k.name: k
+            for k in KnobCatalog.objects.filter(dbms__id=self.dbms_id)
+        }
         return self.extract_valid_variables(valid_knobs, knob_catalog)
 
     def parse_dbms_metrics(self, metrics):
@@ -309,15 +324,20 @@ class BaseParser:
         valid_metrics = self.parse_dbms_variables(metrics)
 
         # Extract all valid metrics
-        metric_catalog = {m.name: m for m in MetricCatalog.objects.filter(dbms__id=self.dbms_id)}
+        metric_catalog = {
+            m.name: m
+            for m in MetricCatalog.objects.filter(dbms__id=self.dbms_id)
+        }
 
-        valid_metrics, diffs = self.extract_valid_variables(
-            valid_metrics, metric_catalog, default_value='0')
+        valid_metrics, diffs = self.extract_valid_variables(valid_metrics,
+                                                            metric_catalog,
+                                                            default_value='0')
 
         # Combine values
         for name, values in list(valid_metrics.items()):
             metric = metric_catalog[name]
-            if len(values) == 1 or metric.metric_type in MetricType.nonnumeric():
+            if len(values) == 1 or metric.metric_type in MetricType.nonnumeric(
+            ):
                 valid_metrics[name] = values[0]
             elif metric.metric_type in MetricType.numeric():
                 conv_fn = int if metric.vartype == VarType.INTEGER else float
@@ -327,12 +347,18 @@ class BaseParser:
                 else:
                     valid_metrics[name] = str(sum(values))
             else:
-                raise Exception(
-                    'Invalid metric type: {}'.format(metric.metric_type))
+                raise Exception('Invalid metric type: {}'.format(
+                    metric.metric_type))
         return valid_metrics, diffs
 
-    def calculate_change_in_metrics(self, metrics_start, metrics_end, fix_metric_type=True):
-        metric_catalog = {m.name: m for m in MetricCatalog.objects.filter(dbms__id=self.dbms_id)}
+    def calculate_change_in_metrics(self,
+                                    metrics_start,
+                                    metrics_end,
+                                    fix_metric_type=True):
+        metric_catalog = {
+            m.name: m
+            for m in MetricCatalog.objects.filter(dbms__id=self.dbms_id)
+        }
         adjusted_metrics = {}
 
         for met_name, start_val in metrics_start.items():
@@ -353,7 +379,9 @@ class BaseParser:
                 if fix_metric_type:
                     if adj_val < 0:
                         adj_val = end_val
-                        LOG.debug("Changing metric %s from COUNTER to STATISTICS", met_name)
+                        LOG.debug(
+                            "Changing metric %s from COUNTER to STATISTICS",
+                            met_name)
                         met_info.metric_type = MetricType.STATISTICS
                         met_info.save()
                 assert adj_val >= 0, \
@@ -380,7 +408,8 @@ class BaseParser:
         return configuration
 
     def format_bool(self, bool_value, metadata):
-        return self.true_value if int(round(bool_value)) == BooleanType.TRUE else self.false_value
+        return self.true_value if int(
+            round(bool_value)) == BooleanType.TRUE else self.false_value
 
     def format_enum(self, enum_value, metadata):
         enumvals = metadata.enumvals.split(',')
@@ -396,9 +425,8 @@ class BaseParser:
                 int_value = ConversionUtil.get_human_readable2(
                     int_value, self.time_system, self.min_time_unit)
             else:
-                raise Exception(
-                    'Invalid unit type for {}: {}'.format(
-                        metadata.name, metadata.unit))
+                raise Exception('Invalid unit type for {}: {}'.format(
+                    metadata.name, metadata.unit))
 
         return int_value
 
@@ -414,7 +442,8 @@ class BaseParser:
     def format_dbms_knobs(self, knobs):
         formatted_knobs = {}
         for knob_name, knob_value in list(knobs.items()):
-            metadata = KnobCatalog.objects.get(dbms__id=self.dbms_id, name=knob_name)
+            metadata = KnobCatalog.objects.get(dbms__id=self.dbms_id,
+                                               name=knob_name)
             fvalue = None
             if metadata.vartype == VarType.BOOL:
                 fvalue = self.format_bool(knob_value, metadata)
@@ -436,5 +465,6 @@ class BaseParser:
                     knob_name, knob_value))
             formatted_knobs[knob_name] = fvalue
         return formatted_knobs
+
 
 # pylint: enable=no-self-use

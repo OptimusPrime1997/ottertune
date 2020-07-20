@@ -31,11 +31,12 @@ from analysis.preprocessing import Bin, DummyEncoder
 from analysis.constraints import ParamConstraintHelper
 from website.models import (PipelineData, PipelineRun, Result, Workload,
                             SessionKnob, MetricCatalog, ExecutionTime,
-                            KnobCatalog)
+                            KnobCatalog, Session, MetricData)
 from website import db
-from website.types import PipelineTaskType, AlgorithmType, VarType
+from website.types import PipelineTaskType, AlgorithmType, VarType, MixType, RewardType
 from website.utils import DataUtil, JSONUtil
-from website.settings import ENABLE_DUMMY_ENCODER, TIME_ZONE
+from website.settings import ENABLE_DUMMY_ENCODER, TIME_ZONE, SMOOTH_THRESHOLD, CONTINUE_COUNT
+from website.db.base.target_objective import LATENCY_99, THROUGHPUT, C_T
 
 LOG = get_task_logger(__name__)
 
@@ -91,19 +92,31 @@ class ConfigurationRecommendation(BaseTask):  # pylint: disable=abstract-method
 
 
 def clean_knob_data(knob_matrix, knob_labels, session):
+    # modified knob_labels start
+    my_knob_labels = [
+        'bgwriter_lru_maxpages', 'checkpoint_completion_target',
+        'checkpoint_timeout', 'default_statistics_target',
+        'effective_cache_size', 'max_parallel_workers_per_gather',
+        'max_wal_size', 'random_page_cost', 'shared_buffers', 'temp_buffers',
+        'work_mem'
+    ]
+    knob_labels = my_knob_labels
+    # modified knob_labels end
+
     # Filter and amend knob_matrix and knob_labels according to the tunable knobs in the session
     knob_matrix = np.array(knob_matrix)
-    session_knobs = SessionKnob.objects.get_knobs_for_session(session)
-    knob_cat = [k['name'] for k in session_knobs]
+    session_knobs = SessionKnob.objects.get_knobs_for_session(
+        session)  #当前session对应的所有session_knob
+    knob_cat = [k['name'] for k in session_knobs]  #所有的session_knob name
 
     if knob_cat == knob_labels:
-        # Nothing to do!
+        # Nothing to do! 利用了全部的sessoin knobs
         return knob_matrix, knob_labels
 
-    LOG.info("session_knobs: %s, knob_labels: %s, missing: %s, extra: %s",
-             len(knob_cat), len(knob_labels),
-             len(set(knob_cat) - set(knob_labels)),
-             len(set(knob_labels) - set(knob_cat)))
+    LOG.info(
+        "async_tasks clean_knob_dat->session_knobs: %s, knob_labels: %s, missing: %s, extra: %s",
+        len(knob_cat), len(knob_labels), len(set(knob_cat) - set(knob_labels)),
+        len(set(knob_labels) - set(knob_cat)))
 
     nrows = knob_matrix.shape[0]  # pylint: disable=unsubscriptable-object
     new_labels = []
@@ -138,8 +151,8 @@ def clean_knob_data(knob_matrix, knob_labels, session):
         new_columns.append(new_col)
 
     new_matrix = np.hstack(new_columns).reshape(nrows, -1)
-    LOG.debug("Cleaned matrix: %s, knobs (%s): %s", new_matrix.shape,
-              len(new_labels), new_labels)
+    LOG.info("Cleaned matrix: %s, knobs (%s): %s", new_matrix.shape,
+             len(new_labels), new_labels)
 
     assert new_labels == knob_cat, \
         "Expected knobs: {}\nActual knobs:  {}\n".format(
@@ -147,14 +160,30 @@ def clean_knob_data(knob_matrix, knob_labels, session):
     assert new_matrix.shape == (nrows, len(knob_cat)), \
         "Expected shape: {}, Actual shape:  {}".format(
             (nrows, len(knob_cat)), new_matrix.shape)
-
+    # LOG.info(
+    #     "async_tasks clean_knob_data:new_labels={},len(new_metrix)={}".format(
+    #         new_labels, len(new_matrix)))
     return new_matrix, new_labels
+
+
+def my_clean_knob_data(knob_matrix, knob_labels, session):
+    # 自定义最重要的knobs作为调整参数,代码写死
+    my_knob_labels = [
+        'bgwriter_lru_maxpages', 'checkpoint_completion_target',
+        'checkpoint_timeout', 'default_statistics_target',
+        'effective_cache_size', 'max_parallel_workers_per_gather',
+        'max_wal_size', 'random_page_cost', 'shared_buffers', 'temp_buffers',
+        'work_mem'
+    ]
+
+    return clean_knob_data(knob_matrix, my_knob_labels, session)
 
 
 def clean_metric_data(metric_matrix, metric_labels, session):
     # Makes sure that all knobs in the dbms are included in the knob_matrix and knob_labels
     metric_objs = MetricCatalog.objects.filter(dbms=session.dbms)
-    metric_cat = [session.target_objective]
+    # metric_cat = [session.target_objective]
+    metric_cat = [THROUGHPUT, LATENCY_99]
     for metric_obj in metric_objs:
         metric_cat.append(metric_obj.name)
     missing_columns = sorted(set(metric_cat) - set(metric_labels))
@@ -168,10 +197,11 @@ def clean_metric_data(metric_matrix, metric_labels, session):
     # column labels in matrix has the same order as ones in metric catalog
     # missing values are filled with default_val
     for i, metric_name in enumerate(metric_cat):
-        if metric_name in metric_labels_dict:
+        if metric_name in metric_labels_dict:  #latency_99不会被赋值进去
             index = metric_labels_dict[metric_name]
-            matrix[:, i] = metric_matrix[:, index]
-    LOG.debug(matrix.shape)
+            matrix[:, i] = metric_matrix[:, index]  #按列赋值
+    # LOG.debug(matrix.shape)
+    # matrix除了metric_labels的列，其他列都为0
     return matrix, metric_cat
 
 
@@ -267,6 +297,7 @@ def calc_next_knob_range(algorithm, knob_info, newest_result, good_val,
 
 @shared_task(base=IgnoreResultTask, name='preprocessing')
 def preprocessing(result_id, algorithm):
+    # 做了边界确认和是否有足够的历史数据判断（没有历史数据返回LHS推荐结果）
     LOG.info("1DDPG:async_tasks->preprocessing start")
     start_ts = time.time()
     target_data = {}
@@ -276,10 +307,12 @@ def preprocessing(result_id, algorithm):
     knobs = SessionKnob.objects.get_knobs_for_session(session)
 
     # Check that the minvals of tunable knobs are all decided
+    # 没有进入这两部分代码，所有bound都为空，只有min max value.
     for knob_info in knobs:
         if knob_info.get('lowerbound', None) is not None:
             lowerbound = float(knob_info['lowerbound'])
-            LOG.info("async_task:preprocessing lowerbound={}".format(lowerbound))
+            LOG.info(
+                "async_task:preprocessing lowerbound={}".format(lowerbound))
             minval = float(knob_info['minval'])
             if lowerbound < minval * 0.7:
                 # We need to do binary search to determine the minval of this knob
@@ -295,7 +328,8 @@ def preprocessing(result_id, algorithm):
     for knob_info in knobs:
         if knob_info.get('upperbound', None) is not None:
             upperbound = float(knob_info['upperbound'])
-            LOG.info("async_task:preprocessing lowerbound={}".format(upperbound))
+            LOG.info(
+                "async_task:preprocessing lowerbound={}".format(upperbound))
             maxval = float(knob_info['maxval'])
             if upperbound > maxval * 1.3:
                 # We need to do binary search to determine the maxval of this knob
@@ -349,8 +383,8 @@ def preprocessing(result_id, algorithm):
                   JSONUtil.dumps(target_data, pprint=True))
 
     save_execution_time(start_ts, "preprocessing", newest_result)
-    LOG.info("1DDPG:async_tasks->preprocessing end")
-    LOG.warn("1DDPG:async_tasks target_data={}".format(target_data))
+    LOG.info("1DDPG:async_tasks->preprocessing end, arget_data={}".format(
+        target_data))
     return result_id, algorithm, target_data
 
 
@@ -475,19 +509,21 @@ def train_ddpg(train_ddpg_input):
         return target_data, algorithm
 
     LOG.info('2Add training data to ddpg and train ddpg')
-    result = Result.objects.get(pk=result_id)
-    session = result.session
+    the_result = Result.objects.get(pk=result_id)
+    session = the_result.session
     params = JSONUtil.loads(session.hyperparameters)
+    # 找出同一session中create_time在当前result之前的result
     session_results = Result.objects.filter(
-        session=session, creation_time__lt=result.creation_time)
-    for i, result in enumerate(session_results):
-        if 'range_test' in result.metric_data.name:
+        session=session, creation_time__lt=the_result.creation_time)
+    # pop掉包含range_test的result
+    for i, the_result in enumerate(session_results):
+        if 'range_test' in the_result.metric_data.name:
             session_results.pop(i)
     target_data = {}
     target_data['newest_result_id'] = result_id
 
     # Extract data from result and previous results
-    result = Result.objects.filter(pk=result_id)
+    results = Result.objects.filter(pk=result_id)
     if len(session_results) == 0:
         base_result_id = result_id
         prev_result_id = result_id
@@ -497,7 +533,13 @@ def train_ddpg(train_ddpg_input):
     base_result = Result.objects.filter(pk=base_result_id)
     prev_result = Result.objects.filter(pk=prev_result_id)
 
-    agg_data = DataUtil.aggregate_data(result)
+    agg_data = DataUtil.aggregate_data(results)
+    test_metric_labels = list(
+        JSONUtil.loads(base_result[0].metric_data.data).keys())
+
+    LOG.warn("async train_ddpg:len(test_metric_labels)={},isIn={}".format(
+        len(test_metric_labels), ('99th_lat_ms' in test_metric_labels)))
+
     base_metric_data = (
         DataUtil.aggregate_data(base_result))['y_matrix'].flatten()
     prev_metric_data = (
@@ -510,17 +552,21 @@ def train_ddpg(train_ddpg_input):
     ]
 
     # Clean metric data
+    # 将来添加latency_99时需要在这里添加一下代码，否则会被过滤掉
     metric_data, metric_labels = clean_metric_data(agg_data['y_matrix'],
                                                    agg_data['y_columnlabels'],
                                                    session)
     metric_data = metric_data.flatten()
     metric_scalar = MinMaxScaler().fit(metric_data.reshape(1, -1))
+    # metric_data是全量的metric,仅有metric_labels的列有值存在。
     normalized_metric_data = metric_scalar.transform(metric_data.reshape(
         1, -1))[0]
 
     # Clean knob data
+    # 这里也是使用全量的knobs
     cleaned_knob_data = clean_knob_data(agg_data['X_matrix'],
                                         agg_data['X_columnlabels'], session)
+
     knob_data = np.array(cleaned_knob_data[0])
     knob_labels = np.array(cleaned_knob_data[1])
     knob_bounds = np.vstack(
@@ -528,8 +574,11 @@ def train_ddpg(train_ddpg_input):
     knob_data = MinMaxScaler().fit(knob_bounds).transform(knob_data)[0]
     knob_num = len(knob_data)
     metric_num = len(metric_data)
-    LOG.info('knob_num: %d, metric_num: %d', knob_num, metric_num)
-
+    # LOG.info('knob_num: %d, metric_num: %d', knob_num, metric_num)
+    LOG.info(
+        "async_tasks train_ddpg:knob_num={},metric_num={},isIn={},isInMetrics={}"
+        .format(knob_num, metric_num, ('autovacuum' in knob_labels),
+                ('99th_lat_ms' in metric_labels)))
     # Filter ys by current target objective metric
     target_obj_idx = [
         i for i, n in enumerate(metric_labels) if n == target_objective
@@ -543,12 +592,15 @@ def train_ddpg(train_ddpg_input):
              'metrics (target_obj={})').format(len(target_obj_idx),
                                                target_objective))
     objective = metric_data[target_obj_idx]
+    LOG.info("async_tasks prev_obj_idx={},len(base_metric_data)={}".format(
+        prev_obj_idx, len(base_metric_data)))
     base_objective = base_metric_data[prev_obj_idx]
     prev_objective = prev_metric_data[prev_obj_idx]
     metric_meta = db.target_objectives.get_metric_metadata(
         session.dbms.pk, session.target_objective)
 
-    # Calculate the reward
+    # Calculate the reward,reward越大越好
+    reward = 0.00001
     if params['DDPG_SIMPLE_REWARD']:
         objective = objective / base_objective
         if metric_meta[target_objective].improvement == '(less is better)':
@@ -556,21 +608,187 @@ def train_ddpg(train_ddpg_input):
         else:
             reward = objective
     else:
-        if metric_meta[target_objective].improvement == '(less is better)':
-            if objective - base_objective <= 0:  # positive reward
-                reward = (np.square((2 * base_objective - objective) / base_objective) - 1)\
-                    * abs(2 * prev_objective - objective) / prev_objective
-            else:  # negative reward
-                reward = -(np.square(objective / base_objective) -
-                           1) * objective / prev_objective
+        if MixType.type(params['MIX_TYPE']) == MixType.NONE:
+            if MixType.type(params['REWARD_TYPE']) == RewardType.CODE:
+                reward = get_reward(params, base_metric_data, prev_metric_data,
+                                    objective, target_objective, prev_obj_idx,
+                                    metric_meta, True)
+                LOG.info(
+                    "async_tasks.train_ddpg calculate_reward NONE.CODE reward={},params['MIX_TYPE']={},params['REWARD_TYPE']={}"
+                    .format(reward, params['MIX_TYPE'], params['REWARD_TYPE']))
+            elif MixType.type(params['REWARD_TYPE']) == RewardType.PAPER:
+                reward = get_reward(params, base_metric_data, prev_metric_data,
+                                    objective, target_objective, prev_obj_idx,
+                                    metric_meta, False)
+                LOG.info(
+                    "async_tasks.train_ddpg calculate_reward NONE.PAPER reward={} MixType.CONSTRAINT params['MIX_TYPE']={},params['REWARD_TYPE']={}"
+                    .format(reward, params['MIX_TYPE'], params['REWARD_TYPE']))
+            else:
+                LOG.error(
+                    "async_tasks.train_ddpg calculate_reward NONE.ERROR MixType.NONE params['MIX_TYPE']={},params['REWARD_TYPE']={}"
+                    .format(params['MIX_TYPE'], params['REWARD_TYPE']))
+        elif MixType.type(params['MIX_TYPE']) == MixType.CONSTRAINT:
+            # contrain reward calculate,限制另一个值在一定范围
+            # LOG.info(
+            #     "async_tasks.train_ddpg CONSTRAINT ENTER reward={}; MixType.CONSTRAINT enter params['MIX_TYPE']={},params['REWARD_TYPE']={}"
+            #     .format(reward, params['MIX_TYPE'], params['REWARD_TYPE']))
+            target_obj = (THROUGHPUT
+                          if THROUGHPUT == target_objective else LATENCY_99)
+            another_obj = (LATENCY_99
+                           if THROUGHPUT == target_objective else THROUGHPUT)
+            another_obj_idx = [
+                i for i, n in enumerate(metric_labels) if n == another_obj
+            ]
+            # base_another_obj = base_metric_data[another_obj_idx]
+            base_another_obj = float(
+                JSONUtil.loads(base_result[0].metric_data.data)[another_obj])
+            cur_another_obj = metric_data[another_obj_idx][0]
+
+            another_metric_meta = db.target_objectives.get_metric_metadata(
+                session.dbms.pk, cur_another_obj)
+            # mutliply_factor将less_is_better转化
+            if another_metric_meta[
+                    another_obj].improvement == '(less is better)':
+                multiply_factor = -1
+            else:
+                multiply_factor = 1
+
+            # LOG.info(
+            #     "async_tasks train_ddpg  cur_another_obj={},another_obj_idx={},another_obj={},target_objective={},improv={},threshold={},len(matric_labels)={},matric_labels={},len(matric_data)={}"
+            #     .format(cur_another_obj, another_obj_idx, another_obj,
+            #             target_objective,
+            #             another_metric_meta[another_obj].improvement,
+            #             params['THRESHOLD'], len(metric_labels), metric_labels,
+            #             len(metric_data)))
+            # current < base
+            another_change_ratio = abs(cur_another_obj / base_another_obj - 1)
+
+            LOG.info(
+                "async_tasks.train_ddpg calculate_reward; CONSTRAINT.ENTER, params['MIX_TYPE']={},params['REWARD_TYPE']={},mutliply_factor={},cur_another_obj={},base_another_obj={},another_change_ratio={},isInRange={},target_objective={},type(objective)={},type(base_objective)={},base_objective={},objective={}"
+                .format(
+                    params['MIX_TYPE'],
+                    params['REWARD_TYPE'],
+                    multiply_factor,
+                    cur_another_obj,
+                    base_another_obj,
+                    # JSONUtil.loads(base_result[0].metric_data.data),
+                    another_change_ratio,
+                    (another_change_ratio < params['THRESHOLD']),
+                    target_objective,
+                    type(objective),
+                    type(base_objective),
+                    base_objective,
+                    objective))
+            if -multiply_factor * float(
+                    objective) < -multiply_factor * base_objective[0]:
+                LOG.info("async_tasks train_ddpg compare is correct!")
+            # 判断second target的限制是否被触发
+            if check_penalty(base_another_obj, cur_another_obj,
+                             multiply_factor, params):
+                # 判断目标指标的值是否小于初始值
+                if -multiply_factor * float(
+                        objective) < -multiply_factor * base_objective[0]:
+                    #超过阈值并且当前目标小于初始目标;penatly*(1+threslod),较大的惩罚
+                    reward = -(objective /
+                               objective) * params['PENALTY_REWARD'] * (
+                                   1 + params['THRESHOLD'])
+                    LOG.info(
+                        "async_tasks.train_ddpg calculate_reward; CONSTRAINT.Penalty.more reward={} params['MIX_TYPE']={},params['REWARD_TYPE']={}"
+                        .format(reward, params['MIX_TYPE'],
+                                params['REWARD_TYPE']))
+                else:
+                    #超过阈值但当前的目标值大于初始目标值,penalty*(1-threshold),较小的惩罚
+                    reward = -(objective /
+                               objective) * params['PENALTY_REWARD'] * (
+                                   1 - params['THRESHOLD'])
+                    LOG.info(
+                        "async_tasks.train_ddpg calculate_reward; CONSTRAINT.Penalty.less reward={} params['MIX_TYPE']={},params['REWARD_TYPE']={}"
+                        .format(reward, params['MIX_TYPE'],
+                                params['REWARD_TYPE']))
+            else:
+                if RewardType.type(params['REWARD_TYPE']) == RewardType.CODE:
+                    #         params, base_metric_data, prev_metric_data, objective,
+                    #    target_objective, prev_obj_idx, metric_meta, is_code
+                    reward = get_reward(params, base_metric_data,
+                                        prev_metric_data, objective,
+                                        target_objective, prev_obj_idx,
+                                        metric_meta, True)
+                    LOG.info(
+                        "async_tasks.train_ddpg calculate_reward; CONSTRAINT.CODE reward={} params['MIX_TYPE']={},params['REWARD_TYPE']={}"
+                        .format(reward, params['MIX_TYPE'],
+                                params['REWARD_TYPE']))
+                elif RewardType.type(
+                        params['REWARD_TYPE']) == RewardType.PAPER:
+                    reward = get_reward(params, base_metric_data,
+                                        prev_metric_data, objective,
+                                        target_objective, prev_obj_idx,
+                                        metric_meta, False)
+                    LOG.info(
+                        "async_tasks.train_ddpg calculate_reward; CONSTRAINT.PAPER reward={} params['MIX_TYPE']={},params['REWARD_TYPE']={}"
+                        .format(reward, params['MIX_TYPE'],
+                                params['REWARD_TYPE']))
+                else:
+                    LOG.error(
+                        "async_tasks.train_ddpg calculate_reward; CONSTRAINT.ERROR params['MIX_TYPE']={},params['REWARD_TYPE']={}"
+                        .format(params['MIX_TYPE'], params['REWARD_TYPE']))
+        elif MixType.type(params['MIX_TYPE']) == MixType.SIMPLE:
+            if MixType.type(params['REWARD_TYPE']) == RewardType.CODE:
+                reward = get_mix_reward(params, agg_data, base_metric_data,
+                                        prev_metric_data, objective,
+                                        target_objective, metric_meta,
+                                        THROUGHPUT, LATENCY_99, True)
+                LOG.info(
+                    "async_tasks.train_ddpg calculate_reward; SIMPLEC.CODE params['MIX_TYPE']={},params['REWARD_TYPE']={}"
+                    .format(params['MIX_TYPE'], params['REWARD_TYPE']))
+            elif MixType.type(params['REWARD_TYPE']) == RewardType.PAPER:
+                reward = get_mix_reward(params, agg_data, base_metric_data,
+                                        prev_metric_data, objective,
+                                        target_objective, metric_meta,
+                                        THROUGHPUT, LATENCY_99, False)
+                LOG.info(
+                    "async_tasks.train_ddpg calculate_reward; SIMPLE.PAPER reward={} params['MIX_TYPE']={},params['REWARD_TYPE']={}"
+                    .format(reward, params['MIX_TYPE'], params['REWARD_TYPE']))
+            else:
+                LOG.error(
+                    "async_tasks.train_ddpg calculate_reward; SIMPLE.ERROR params['MIX_TYPE']={},params['REWARD_TYPE']={}"
+                    .format(params['MIX_TYPE'], params['REWARD_TYPE']))
         else:
-            if objective - base_objective > 0:  # positive reward
-                reward = (np.square(objective / base_objective) -
-                          1) * objective / prev_objective
-            else:  # negative reward
-                reward = -(np.square((2 * base_objective - objective) / base_objective) - 1)\
-                    * abs(2 * prev_objective - objective) / prev_objective
-    LOG.info('reward: %f', reward)
+            LOG.error(
+                "async_tasks.train_ddpg calculate_reward; MixType.ERROR params['MIX_TYPE']={},params['REWARD_TYPE']={}"
+                .format(params['MIX_TYPE'], params['REWARD_TYPE']))
+        # if metric_meta[target_objective].improvement == '(less is better)':
+        #     if objective - base_objective <= 0:  # positive reward
+        #         reward = (np.square((2 * base_objective - objective) / base_objective) - 1)\
+        #             * abs(2 * prev_objective - objective) / prev_objective
+        #     else:  # negative reward
+        #         reward = -(np.square(objective / base_objective) -
+        #                    1) * objective / prev_objective
+        # else:
+        #     if objective - base_objective > 0:  # positive reward
+        #         reward = (np.square(objective / base_objective) -
+        #                   1) * objective / prev_objective
+        #     else:  # negative reward
+        #         reward = -(np.square((2 * base_objective - objective) / base_objective) - 1)\
+        #             * abs(2 * prev_objective - objective) / prev_objective
+
+    # LOG.info("async_tasks get_reward with code method")
+    # reward = get_reward(params, base_metric_data, prev_metric_data, objective,
+    #                     target_objective, prev_obj_idx, metric_meta, True)
+    # LOG.info("async_tasks get_reward with paper method")
+    # reward = get_reward(params, base_metric_data, prev_metric_data, objective,
+    #                     target_objective, prev_obj_idx, metric_meta, False)
+    # LOG.info("async_tasks get_mix_reward")
+    # reward = get_mix_reward(params, agg_data, base_metric_data,
+    #                         prev_metric_data, objective, target_objective,
+    #                         metric_data, THROUGHPUT, LATENCY_99,True)
+    # the_result.reward = float(reward)
+    # the_result.reward = 2.1
+    # the_result.save()
+
+    LOG.info(
+        "async_tasks train_ddpg method, reward={}, params['REWARD_TYPE']={}, params['MIX_TYPE']={},type(reward)={}"
+        .format(reward, params['REWARD_TYPE'], params['MIX_TYPE'],
+                type(reward)))
 
     # Update ddpg
     ddpg = DDPG(n_actions=knob_num,
@@ -579,8 +797,6 @@ def train_ddpg(train_ddpg_input):
                 clr=params['DDPG_CRITIC_LEARNING_RATE'],
                 gamma=params['DDPG_GAMMA'],
                 batch_size=params['DDPG_BATCH_SIZE'],
-                a_hidden_sizes=params['DDPG_ACTOR_HIDDEN_SIZES'],
-                c_hidden_sizes=params['DDPG_CRITIC_HIDDEN_SIZES'],
                 use_default=params['DDPG_USE_DEFAULT'])
     if session.ddpg_actor_model and session.ddpg_critic_model:
         ddpg.set_model(session.ddpg_actor_model, session.ddpg_critic_model)
@@ -595,10 +811,108 @@ def train_ddpg(train_ddpg_input):
     save_execution_time(start_ts, "train_ddpg",
                         Result.objects.get(pk=result_id))
     session.save()
-
-    LOG.info("2DDPG:async_tasks->train_ddpg end")
-
+    LOG.info(
+        "2DDPG:async_tasks->train_ddpg end,duration={}".format(time.time() -
+                                                               start_ts))
+    target_data['reward'] = reward[0]
     return target_data, algorithm
+    """use determined value as constraint or threshold percentage
+    """
+
+
+def check_penalty(base_another_obj, cur_another_obj, multiply_factor, params):
+    LOG.info(
+        "async_tasks>check_penalty method execute, params['USE_DETERMINED_VALUE']={}"
+        .format(params['USE_DETERMINED_VALUE']))
+    if params['USE_DETERMINED_VALUE']:
+        if multiply_factor * cur_another_obj < multiply_factor * params[
+                'SECOND_CONTRAINT']:
+            return True
+        else:
+            return False
+    else:
+        if multiply_factor * cur_another_obj < multiply_factor * base_another_obj and abs(
+                cur_another_obj / base_another_obj - 1) >= params['THRESHOLD']:
+            return False
+        else:
+            return True
+
+
+def get_reward(params, base_metric_data, prev_metric_data, objective,
+               target_objective, prev_obj_idx, metric_meta, is_code):
+    base_objective = base_metric_data[prev_obj_idx]
+    prev_objective = prev_metric_data[prev_obj_idx]
+    if is_code:
+        # Calculate the reward using raw alogrithm
+        if params['DDPG_SIMPLE_REWARD']:
+            objective = objective / base_objective
+            if metric_meta[target_objective].improvement == '(less is better)':
+                reward = -objective
+            else:
+                reward = objective
+        else:
+            if metric_meta[target_objective].improvement == '(less is better)':
+                if objective - base_objective <= 0:  # positive reward
+                    reward = (np.square((2 * base_objective - objective) / base_objective) - 1)\
+                        * abs(2 * prev_objective - objective) / prev_objective
+                else:  # negative reward
+                    reward = -(np.square(objective / base_objective) -
+                               1) * objective / prev_objective
+            else:
+                if objective - base_objective > 0:  # positive reward
+                    reward = (np.square(objective / base_objective) -
+                              1) * objective / prev_objective
+                else:  # negative reward
+                    reward = -(np.square((2 * base_objective - objective) / base_objective) - 1)\
+                        * abs(2 * prev_objective - objective) / prev_objective
+        LOG.info('async_tasks get_reward_code:reward: %f', reward)
+        return reward
+    else:
+        # Calculate the reward using CDBTune algorithm
+        if params['DDPG_SIMPLE_REWARD']:
+            objective = objective / base_objective
+            if metric_meta[target_objective].improvement == '(less is better)':
+                reward = -objective
+            else:
+                reward = objective
+        else:
+            if metric_meta[target_objective].improvement == '(less is better)':
+                reward = (
+                    (1 + (base_objective - objective) / base_objective)**2 -
+                    1) * abs(1 + (prev_objective - objective) / prev_objective)
+            else:
+                reward = (
+                    (1 + (objective - base_objective) / base_objective)**2 -
+                    1) * abs(1 + (objective - prev_objective) / prev_objective)
+        LOG.info('async_tasks get_reward_paper:reward: %f', reward)
+        return reward
+
+
+def get_mix_reward(params, agg_data, base_metric_data, prev_metric_data,
+                   objective, target_objective, metric_meta, objective1,
+                   objective2, is_code):
+    prev_obj_idx1 = [
+        i for i, n in enumerate(agg_data['y_columnlabels']) if n == objective1
+    ]
+    prev_obj_idx2 = [
+        i for i, n in enumerate(agg_data['y_columnlabels']) if n == objective2
+    ]
+    if is_code:
+        reward1 = get_reward(params, base_metric_data, prev_metric_data,
+                             objective, objective1, prev_obj_idx1, metric_meta,
+                             True)
+        reward2 = get_reward(params, base_metric_data, prev_metric_data,
+                             objective, objective2, prev_obj_idx2, metric_meta,
+                             True)
+    else:
+        reward1 = get_reward(params, base_metric_data, prev_metric_data,
+                             objective, objective1, prev_obj_idx1, metric_meta,
+                             False)
+        reward2 = get_reward(params, base_metric_data, prev_metric_data,
+                             objective, objective2, prev_obj_idx2, metric_meta,
+                             False)
+    mix_reward = params[C_T] * reward1 + (1 - params[C_T]) * reward2
+    return mix_reward
 
 
 def create_and_save_recommendation(recommended_knobs, result, status,
@@ -608,9 +922,11 @@ def create_and_save_recommendation(recommended_knobs, result, status,
     config = db.parser.create_knob_configuration(dbms_id, formatted_knobs)
 
     retval = dict(**kwargs)
+    continue_count = calculate_continue(result.pk)
     retval.update(
         status=status,
         result_id=result.pk,
+        continue_count=continue_count,
         recommendation=config,
     )
     result.next_configuration = JSONUtil.dumps(retval)
@@ -622,8 +938,7 @@ def create_and_save_recommendation(recommended_knobs, result, status,
 def check_early_return(target_data, algorithm):
     result_id = target_data['newest_result_id']
     newest_result = Result.objects.get(pk=result_id)
-    LOG.warn(
-        "async_tasks.check_early_return,target_data={}".format(target_data))
+    LOG.warn("async_tasks.check_early_returnget_data")
     if target_data.get('status',
                        'good') != 'good':  # No status or status is not 'good'
         if target_data['status'] == 'random':
@@ -655,39 +970,60 @@ def configuration_recommendation_ddpg(recommendation_ddpg_input):  # pylint: dis
 
     early_return, target_data_res = check_early_return(target_data, algorithm)
     if early_return:
+        LOG.info(
+            "3DDPG:elary return target_data_res={}".format(target_data_res))
         return target_data_res
 
     result_id = target_data['newest_result_id']
     result_list = Result.objects.filter(pk=result_id)
     result = result_list.first()
+    # update current result reward
+    result.reward = target_data.get('reward', 0.00001)
+    result.save()
+
     session = result.session
     params = JSONUtil.loads(session.hyperparameters)
     agg_data = DataUtil.aggregate_data(result_list)
+
+    # LOG.info("3DDPG metric_labels={} len(metric_labels)={}".format(
+    #     agg_data['y_columnlabels'], len(agg_data['y_columnlabels'])))
     metric_data, _ = clean_metric_data(agg_data['y_matrix'],
                                        agg_data['y_columnlabels'], session)
+    # LOG.info("3DDPG metric_data.len={}".format(len(metric_data)))
+
     metric_data = metric_data.flatten()
     metric_scalar = MinMaxScaler().fit(metric_data.reshape(1, -1))
     normalized_metric_data = metric_scalar.transform(metric_data.reshape(
         1, -1))[0]
+    # LOG.info("3DDPG knob_labels={} len(knob_labels)={}".format(
+    #     agg_data['X_columnlabels'], len(agg_data['X_columnlabels'])))
     cleaned_knob_data = clean_knob_data(agg_data['X_matrix'],
                                         agg_data['X_columnlabels'], session)
+    LOG.info("3DDPG knob_data.len={}".format(len(cleaned_knob_data)))
     knob_labels = np.array(cleaned_knob_data[1]).flatten()
     knob_num = len(knob_labels)
     metric_num = len(metric_data)
-
+    LOG.info(
+        "async_tasks configuration_recommendation_ddpg:knob_num={},metric_num={},isIn={}"
+        .format(knob_num, metric_num, ('autovacuum' in knob_labels)))
     ddpg = DDPG(n_actions=knob_num,
                 n_states=metric_num,
                 a_hidden_sizes=params['DDPG_ACTOR_HIDDEN_SIZES'],
                 c_hidden_sizes=params['DDPG_CRITIC_HIDDEN_SIZES'],
                 use_default=params['DDPG_USE_DEFAULT'])
+    # set model use older model
     if session.ddpg_actor_model is not None and session.ddpg_critic_model is not None:
         ddpg.set_model(session.ddpg_actor_model, session.ddpg_critic_model)
     if session.ddpg_reply_memory is not None:
         ddpg.replay_memory.set(session.ddpg_reply_memory)
+    # choose action
     knob_data = ddpg.choose_action(normalized_metric_data)
     knob_bounds = np.vstack(DataUtil.get_knob_bounds(knob_labels, session))
     knob_data = MinMaxScaler().fit(knob_bounds).inverse_transform(
         knob_data.reshape(1, -1))[0]
+    LOG.info(
+        "async_tasks configuration_recommendation_ddpg conf_map.knob_labels={}"
+        .format(knob_labels))
     conf_map = {k: knob_data[i] for i, k in enumerate(knob_labels)}
 
     target_data_res = create_and_save_recommendation(
@@ -697,7 +1033,9 @@ def configuration_recommendation_ddpg(recommendation_ddpg_input):  # pylint: dis
         info='INFO: ddpg')
 
     save_execution_time(start_ts, "configuration_recommendation_ddpg", result)
-    LOG.info('3DDPG:configuration_recommendation_ddpg called (DDPG) end')
+    LOG.info(
+        '3DDPG:configuration_recommendation_ddpg called (DDPG) end,duration={}'
+        .format(time.time() - start_ts))
     return target_data_res
 
 
@@ -912,7 +1250,7 @@ def combine_workload(target_data):
 def configuration_recommendation(recommendation_input):
     start_ts = time.time()
     target_data, algorithm = recommendation_input
-    LOG.info('configuration_recommendation called')
+    LOG.info('async_tasks configuration_recommendation called')
 
     early_return, target_data_res = check_early_return(target_data, algorithm)
     if early_return:
@@ -1265,3 +1603,83 @@ def map_workload(map_workload_input):
 
     save_execution_time(start_ts, "map_workload", newest_result)
     return target_data, algorithm
+
+
+### add method to check is convergence or not start
+def calculate_continue(cur_result_id):
+    cur_result = Result.objects.get(id=cur_result_id)
+    session_id = cur_result.session_id
+    session_results = Result.objects.filter(session_id=session_id)
+    if session_results == None or len(session_results) < 1:
+        return 0
+    if session_results.count() > 2:
+        prev_result = session_results[session_results.count() - 2]
+    else:
+        return 0
+    target_objective = Session.objects.get(id=session_id).target_objective
+
+    cur_metric_id = cur_result_id
+    cur_obj = get_target_objective(cur_metric_id, target_objective)
+
+    prev_metric_id = prev_result.pk
+    prev_obj = get_target_objective(prev_metric_id, target_objective)
+    cur_metric = MetricData.objects.get(id=prev_metric_id)
+
+    if session_results.count() == 0:
+        return 0
+    i = 1
+    while i <= session_results.count() and session_results[
+            session_results.count() - i].next_configuration is None:
+        i += 1
+    if i > session_results.count():
+        return 0
+
+    prev_result = session_results[session_results.count() - i]
+
+    temp_prev = JSONUtil.loads(prev_result.next_configuration)
+    prev_count = temp_prev[CONTINUE_COUNT]
+    base_obj = JSONUtil.loads(
+        session_results[0].next_configuration)[CONTINUE_COUNT]
+    cur_session = Session.objects.get(pk=session_id)
+    session_objective = cur_session.target_objective
+
+    if session_objective == THROUGHPUT:
+        multiply_factor = 1
+    else:
+        multiply_factor = -1
+    LOG.info("async_tasks.multiply_factor={}".format(multiply_factor))
+    if multiply_factor * cur_obj <= multiply_factor * base_obj:
+        continue_count = 0
+    else:
+        if is_smooth(prev_obj, cur_obj, SMOOTH_THRESHOLD):
+            continue_count = prev_count + 1
+        else:
+            continue_count = 0
+    return continue_count
+
+
+def get_target_objective(metric_id, target_objective):
+    cal_metric = MetricData.objects.get(id=metric_id)
+    cal_obj = JSONUtil.loads(cal_metric.data)[target_objective]
+    LOG.info(
+        "async_tasks get_target_objective:metric_id={},returned_obj={}".format(
+            metric_id, cal_obj))
+    return cal_obj
+
+
+def is_smooth(prev_obj, cur_obj, threshold):
+    result = False
+    if prev_obj == 0:
+        result = False
+    else:
+        if abs(cur_obj / prev_obj - 1) <= threshold:
+            result = True
+        else:
+            result = False
+    LOG.info(
+        "async_tasks is_smooth method prev_obj={},cur_obj={},ratio={},is_smooth={}"
+        .format(prev_obj, cur_obj, cur_obj / prev_obj, result))
+    return result
+
+
+###add method to check is convergence or not end

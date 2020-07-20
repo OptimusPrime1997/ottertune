@@ -1,20 +1,21 @@
 {
   "celery_status": "SUCCESS",
-  "result_id": 154,
+  "result_id": 2663,
   "message": "Celery successfully recommended the next configuration",
   "errors": [],
   "info": "INFO: ddpg",
   "status": "good",
+  "continue_count": 0,
   "recommendation": {
-    "archive_mode": "off",
-    "autovacuum": "on",
-    "effective_cache_size": "939306kB",
-    "maintenance_work_mem": "11786498kB",
-    "max_wal_size": "4800MB",
-    "max_worker_processes": 8,
-    "shared_buffers": "11961810kB",
-    "temp_buffers": "227137kB",
-    "wal_buffers": "7792kB",
-    "work_mem": "42256kB"
+    "bgwriter_lru_maxpages": 0,
+    "checkpoint_completion_target": 0.074,
+    "checkpoint_timeout": "70190600ms",
+    "default_statistics_target": 10000,
+    "effective_cache_size": "197531kB",
+    "max_parallel_workers_per_gather": 5,
+    "max_wal_size": "122795864kB",
+    "shared_buffers": "12677784kB",
+    "temp_buffers": "12800kB",
+    "work_mem": "263026kB"
   }
 }

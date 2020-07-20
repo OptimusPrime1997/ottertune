@@ -16,17 +16,24 @@ LOG = logging.getLogger(__name__)
 LESS_IS_BETTER = '(less is better)'
 MORE_IS_BETTER = '(more is better)'
 THROUGHPUT = 'throughput_txn_per_sec'
+LATENCY_99 = '99th_lat_ms'
+THROUGHPUT_MIX = 'throughput_mix'
+C_T = 'C_T'
 
 
 class BaseMetric:
-
     _improvement_choices = (LESS_IS_BETTER, MORE_IS_BETTER, '')
 
-    def __init__(self, name, pprint=None, unit='events / second', short_unit='events/sec',
-                 improvement='', scale=1):
+    def __init__(self,
+                 name,
+                 pprint=None,
+                 unit='events / second',
+                 short_unit='events/sec',
+                 improvement='',
+                 scale=1):
         if improvement not in self._improvement_choices:
-            raise ValueError("Improvement must be one of: {}".format(
-                ', '.join("'{}'".format(ic) for ic in self._improvement_choices)))
+            raise ValueError("Improvement must be one of: {}".format(', '.join(
+                "'{}'".format(ic) for ic in self._improvement_choices)))
         if scale != 1:
             raise NotImplementedError()
 
@@ -42,8 +49,12 @@ class BaseTargetObjective(BaseMetric):
     _improvement_choices = (LESS_IS_BETTER, MORE_IS_BETTER)
 
     def __init__(self, name, pprint, unit, short_unit, improvement, scale=1):
-        super().__init__(name=name, pprint=pprint, unit=unit, short_unit=short_unit,
-                         improvement=improvement, scale=scale)
+        super().__init__(name=name,
+                         pprint=pprint,
+                         unit=unit,
+                         short_unit=short_unit,
+                         improvement=improvement,
+                         scale=scale)
 
     @property
     def label(self):
@@ -54,15 +65,37 @@ class BaseTargetObjective(BaseMetric):
 
 
 class BaseThroughput(BaseTargetObjective):
-
     def __init__(self, transactions_counter):
-        super().__init__(name=THROUGHPUT, pprint='Throughput',
-                         unit='transactions / second', short_unit='txn/sec',
+        super().__init__(name=THROUGHPUT,
+                         pprint='Throughput',
+                         unit='transactions / second',
+                         short_unit='txn/sec',
                          improvement=MORE_IS_BETTER)
         if not isinstance(transactions_counter, (str, tuple)):
             raise TypeError(
-                "Argument 'transactions_counter' must be str or tuple type, not {}.".format(
-                    type(transactions_counter)))
+                "Argument 'transactions_counter' must be str or tuple type, not {}."
+                .format(type(transactions_counter)))
+        self.transactions_counter = transactions_counter
+
+    def compute(self, metrics, observation_time):
+        if isinstance(self.transactions_counter, tuple):
+            num_txns = sum(metrics[ctr] for ctr in self.transactions_counter)
+        else:
+            num_txns = metrics[self.transactions_counter]
+        return float(num_txns) / observation_time
+
+
+class BaseThroughput_Mix(BaseTargetObjective):
+    def __init__(self, transactions_counter):
+        super().__init__(name=THROUGHPUT_MIX,
+                         pprint='Throughput_Mix',
+                         unit='transactions / second',
+                         short_unit='txn/sec',
+                         improvement=MORE_IS_BETTER)
+        if not isinstance(transactions_counter, (str, tuple)):
+            raise TypeError(
+                "Argument 'transactions_counter' must be str or tuple type, not {}."
+                .format(type(transactions_counter)))
         self.transactions_counter = transactions_counter
 
     def compute(self, metrics, observation_time):
@@ -77,6 +110,8 @@ class TargetObjectives:
     LESS_IS_BETTER = LESS_IS_BETTER
     MORE_IS_BETTER = MORE_IS_BETTER
     THROUGHPUT = THROUGHPUT
+    THROUGHPUT_MIX = THROUGHPUT_MIX
+    LATENCY_99 = LATENCY_99
 
     def __init__(self):
         self._registry = {}
@@ -103,10 +138,13 @@ class TargetObjectives:
 
                     if dbms_id not in self._metric_metadatas:
                         numeric_metrics = models.MetricCatalog.objects.filter(
-                            dbms=dbms, metric_type__in=types.MetricType.numeric()).values_list(
-                                'name', flat=True)
-                        self._metric_metadatas[dbms_id] = [(mname, BaseMetric(mname)) for mname
-                                                           in sorted(numeric_metrics)]
+                            dbms=dbms,
+                            metric_type__in=types.MetricType.numeric(
+                            )).values_list('name', flat=True)
+                        self._metric_metadatas[dbms_id] = [
+                            (mname, BaseMetric(mname))
+                            for mname in sorted(numeric_metrics)
+                        ]
 
     def registered(self):
         return len(self._registry) > 0
@@ -147,7 +185,8 @@ class TargetObjectives:
     def __repr__(self):
         s = 'TargetObjectives = (\n'
         for dbms_id, entry in self._registry.items():  # pylint: disable=not-an-iterable
-            s += '  {}:\n'.format(models.DBMSCatalog.objects.get(id=dbms_id).full_name)
+            s += '  {}:\n'.format(
+                models.DBMSCatalog.objects.get(id=dbms_id).full_name)
             for name in entry.keys():
                 s += '    {}\n'.format(name)
         s += ')\n'

@@ -18,7 +18,6 @@ from analysis.ddpg.ddpg import DDPG
 # Train 500 iterations and test for 500 iterations
 # If the average reward during test is larger than 0.9, this test passes
 class TestDDPG(unittest.TestCase):
-
     @classmethod
     def setUpClass(cls):
         random.seed(0)
@@ -31,9 +30,11 @@ class TestDDPG(unittest.TestCase):
         for _ in range(100):
             prev_metric_data = metric_data
             metric_data = np.array([random.random()])
-            reward = 1.0 if (prev_metric_data[0] - 0.5) * (knob_data[0] - 0.5) > 0 else 0.0
+            reward = 1.0 if (prev_metric_data[0] - 0.5) * (knob_data[0] -
+                                                           0.5) > 0 else 0.0
             reward = np.array([reward])
-            cls.ddpg.add_sample(prev_metric_data, knob_data, reward, metric_data)
+            cls.ddpg.add_sample(prev_metric_data, knob_data, reward,
+                                metric_data)
             for _ in range(10):
                 cls.ddpg.update()
             knob_data = cls.ddpg.choose_action(metric_data)
@@ -43,7 +44,8 @@ class TestDDPG(unittest.TestCase):
         for _ in range(500):
             prev_metric_data = np.array([random.random()])
             knob_data = self.ddpg.choose_action(prev_metric_data)
-            reward = 1.0 if (prev_metric_data[0] - 0.5) * (knob_data[0] - 0.5) > 0 else 0.0
+            reward = 1.0 if (prev_metric_data[0] - 0.5) * (knob_data[0] -
+                                                           0.5) > 0 else 0.0
             total_reward += reward
         self.assertGreater(total_reward / 500, 0.5)
 

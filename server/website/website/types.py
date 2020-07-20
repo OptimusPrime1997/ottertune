@@ -25,8 +25,10 @@ class BaseType(object):
 
     @classmethod
     def type(cls, name):
-        return [k for k, v in list(cls.TYPE_NAMES.items()) if
-                v.lower() == name.lower()][0]
+        return [
+            k for k, v in list(cls.TYPE_NAMES.items())
+            if v.lower() == name.lower()
+        ][0]
 
 
 class DBMSType(BaseType):
@@ -66,11 +68,12 @@ class MetricType(BaseType):
 
     @classmethod
     def nonnumeric(cls):
-        return (cls.INFO,)
+        return (cls.INFO, )
 
     @classmethod
     def numeric(cls):
-        return tuple(sorted(set(cls.TYPE_NAMES.keys()) - set(cls.nonnumeric())))
+        return tuple(
+            sorted(set(cls.TYPE_NAMES.keys()) - set(cls.nonnumeric())))
 
 
 class VarType(BaseType):
@@ -173,11 +176,7 @@ class LabelStyleType(BaseType):
 
     DEFAULT_STYLE = TITLE
 
-    TYPE_NAMES = {
-        TITLE: 'title',
-        CAPFIRST: 'capfirst',
-        LOWER: 'lower'
-    }
+    TYPE_NAMES = {TITLE: 'title', CAPFIRST: 'capfirst', LOWER: 'lower'}
 
 
 class AlgorithmType(BaseType):
@@ -200,3 +199,24 @@ class StorageType(BaseType):
         SSD: 'SSD',
         HDD: 'HDD',
     }
+
+
+class RewardType(BaseType):
+    CODE = 1
+    PAPER = 2
+    TYPE_NAMES = {CODE: 'CODE', PAPER: 'PAPER'}
+
+
+class MixType(BaseType):
+    SIMPLE = 1
+    CONSTRAINT = 2
+    NONE = 3
+    TYPE_NAMES = {SIMPLE: "SIMPLE", CONSTRAINT: "CONSTRAINT", NONE: "NONE"}
+
+
+# if __name__ == '__main__':
+#     t = RewardType.type('CODE')
+#     print(t)
+#     print(RewardType.CODE)
+#     print(RewardType.name(RewardType.CODE))
+#     print(RewardType.type('CODE') == RewardType.CODE)

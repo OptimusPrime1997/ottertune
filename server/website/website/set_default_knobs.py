@@ -14,16 +14,11 @@ LOG = logging.getLogger(__name__)
 # tunable knobs in the KnobCatalog will be used instead.
 DEFAULT_TUNABLE_KNOBS = {
     DBMSType.POSTGRES: {
-        "global.autovacuum",
-        "global.archive_mode",
-        "global.effective_cache_size",
-        "global.maintenance_work_mem",
-        "global.max_wal_size",
-        "global.max_worker_processes",
-        "global.shared_buffers",
-        "global.temp_buffers",
-        "global.wal_buffers",
-        "global.work_mem",
+        'global.bgwriter_lru_maxpages', 'global.checkpoint_completion_target',
+        'global.checkpoint_timeout', 'global.default_statistics_target',
+        'global.effective_cache_size', 'global.max_wal_size',
+        'global.max_parallel_workers_per_gather', 'global.shared_buffers',
+        'global.temp_buffers', 'global.work_mem'
     },
     DBMSType.ORACLE: {
         "global.db_cache_size",
@@ -36,9 +31,21 @@ DEFAULT_TUNABLE_KNOBS = {
         "global.sort_area_size",
     },
 }
+# DBMSType.POSTGRES: {
+#         "global.autovacuum",
+#         "global.archive_mode",
+#         "global.effective_cache_size",
+#         "global.maintenance_work_mem",
+#         "global.max_wal_size",
+#         "global.max_worker_processes",
+#         "global.shared_buffers",
+#         "global.temp_buffers",
+#         "global.wal_buffers",
+#         "global.work_mem",
+#     },
 
 # Bytes in a GB
-GB = 1024 ** 3
+GB = 1024**3
 
 # Default minval when set to None
 MINVAL = 0
@@ -64,8 +71,10 @@ def set_default_knobs(session, cascade=True):
     default_tunable_knobs = DEFAULT_TUNABLE_KNOBS.get(dbtype)
 
     if not default_tunable_knobs:
-        default_tunable_knobs = set(KnobCatalog.objects.filter(
-            dbms=session.dbms, tunable=True).values_list('name', flat=True))
+        default_tunable_knobs = set(
+            KnobCatalog.objects.filter(dbms=session.dbms,
+                                       tunable=True).values_list('name',
+                                                                 flat=True))
 
     for knob in KnobCatalog.objects.filter(dbms=session.dbms):
         tunable = knob.name in default_tunable_knobs
@@ -87,7 +96,8 @@ def set_default_knobs(session, cascade=True):
             vtype = int if knob.vartype == VarType.INTEGER else float
 
             minval = vtype(minval) if minval is not None else MINVAL
-            knob_maxval = vtype(knob.maxval) if knob.maxval is not None else MAXVAL
+            knob_maxval = vtype(
+                knob.maxval) if knob.maxval is not None else MAXVAL
 
             if knob.resource == KnobResourceType.CPU:
                 maxval = session.hardware.cpu * CPU_PERCENT
@@ -109,9 +119,10 @@ def set_default_knobs(session, cascade=True):
                 maxval = knob_maxval
 
             if maxval < minval:
-                LOG.warning(("Invalid range for session knob '%s': maxval <= minval "
-                             "(minval: %s, maxval: %s). Setting maxval to the vendor setting: %s."),
-                            knob.name, minval, maxval, knob_maxval)
+                LOG.warning((
+                    "Invalid range for session knob '%s': maxval <= minval "
+                    "(minval: %s, maxval: %s). Setting maxval to the vendor setting: %s."
+                ), knob.name, minval, maxval, knob_maxval)
                 maxval = knob_maxval
 
             maxval = vtype(maxval)

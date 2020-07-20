@@ -14,8 +14,9 @@ import os
 import re
 import time
 from collections import OrderedDict
-from multiprocessing import Process
+from multiprocessing import Process, Pool
 import time
+import json
 
 import logging
 from logging.handlers import RotatingFileHandler
@@ -28,13 +29,24 @@ from utils import (file_exists, get, get_content, load_driver_conf, parse_bool,
                    put, run, run_sql_script, sudo, FabricException)
 import paramiko
 
+CONTINUE_COUNT = 'continue_count'
+IS_CONVERGE = False
 VM_IP = '192.168.122.131'
 POSTGRESQL_PORT = 5432
+IS_SYSBENCH = True
+# ----------------sysbench workload enumeration start---
+RO = 'ro'
+RW = 'rw'
+WO = 'wo'
+# ----------------sysbench workload enumeration end---
+# set sysbench workload
+SYSBENCH_WORKLOAD = RO
+
 with open('driver_config.json', 'r') as f:
     CONF = json.load(f)
 # Loads the driver config file (defaults to driver_config.py)
 dconf = load_driver_conf()  # pylint: disable=invalid-name
-
+SMOOTH_COUNT = dconf.SMOOTH_COUNT
 # Fabric settings
 fabric_output.update({
     'running': True,
@@ -131,8 +143,8 @@ def restart_database():
         else:
             sudo('pg_ctl -D {} -w -t 600 restart -m fast'.format(
                 dconf.PG_DATADIR),
-                user=dconf.ADMIN_USER,
-                capture=False)
+                 user=dconf.ADMIN_USER,
+                 capture=False)
     elif dconf.DB_TYPE == 'oracle':
         db_log_path = os.path.join(
             os.path.split(dconf.DB_CONF)[0], 'startup.log')
@@ -319,11 +331,21 @@ def run_oltpbench():
 
 @task
 def run_oltpbench_bg():
-    cmd = 'echo "123" | sudo -S ./oltpbenchmark -b {} -c {} --execute=true -s 5 -o outputfile > {} 2>&1 &'.\
-          format(dconf.OLTPBENCH_BENCH,
-                 dconf.OLTPBENCH_CONFIG, dconf.OLTPBENCH_LOG)
-    with lcd(dconf.OLTPBENCH_HOME):  # pylint: disable=not-context-manager
-        local(cmd)
+    LOG.info("run_oltpbench_bg start!")
+    if IS_SYSBENCH is True:
+        cmd = 'echo "123" | sudo -S bash /home/ljh/exp/scripts/sysbench/postgresql/p_{}_run.sh > {} 2>&1 &'.format(
+            SYSBENCH_WORKLOAD, CONF['sysbench_log'])
+        with lcd(CONF['oltpbench_home']):  # pylint: disable=not-context-manager
+            local(cmd)
+        LOG.info("sysbench {} started".format(SYSBENCH_WORKLOAD))
+    else:
+        cmd = 'echo "123" | sudo -S ./oltpbenchmark -b {} -c {} --execute=true\
+            -s 30 -o outputfile > {} 2>&1 &'.format(CONF['oltpbench_workload'],
+                                                    CONF['oltpbench_config'],
+                                                    CONF['oltpbench_log'])
+        with lcd(CONF['oltpbench_home']):  # pylint: disable=not-context-manager
+            local(cmd)
+        LOG.info("OLTP tpcc started")
 
 
 @task
@@ -334,10 +356,12 @@ def run_controller():
           format(dconf.CONTROLLER_CONFIG, dconf.CONTROLLER_LOG)
     with lcd(dconf.CONTROLLER_HOME):  # pylint: disable=not-context-manager
         local(cmd)
+        LOG.info("run_controller executed")
 
 
 @task
 def signal_controller():
+    LOG.info("signal_controller execute!")
     pidfile = os.path.join(dconf.CONTROLLER_HOME, 'pid.txt')
     with open(pidfile, 'r') as f:
         pid = int(f.read())
@@ -550,7 +574,14 @@ def download_debug_info(pprint=False):
 
 @task
 def add_udf():
-    local('python3 ./LatencyUDF.py ../controller/output/')
+    if IS_SYSBENCH is True:
+        cmd = 'sudo python3 ./LatencyUDF.py ../controller/output/ {}'.format(
+            CONF['sysbench_log'])
+        local(cmd)
+        # LOG.info("sysbench not add 99th latency")
+    else:
+        cmd = 'sudo python3 ./LatencyUDF.py ../controller/output/ /home/ljh/projects/oltpbench/results/'
+        local(cmd)
 
 
 @task
@@ -574,40 +605,43 @@ def upload_batch(result_dir=None, sort=True, upload_code=None):
 
 
 @task
-def dump_database():
-    dumpfile = os.path.join(dconf.DB_DUMP_DIR, dconf.DB_NAME + '.dump')
-    if dconf.DB_TYPE == 'oracle':
-        if not dconf.ORACLE_FLASH_BACK and file_exists(dumpfile):
-            LOG.info('%s already exists ! ', dumpfile)
-            return False
+def dump_remote_database():
+    if IS_SYSBENCH is True:
+        return
+    db_file_path = '{}/{}.dump'.format(CONF['database_save_path'],
+                                       CONF['database_name'])
+    remote_exec(
+        VM_IP,
+        "cd {} && rsync -auv ljh@192.168.122.1:/home/ljh/stores/{}.dump {}/{}.dump"
+        .format(
+            CONF['database_save_path'],
+            CONF['database_name'],
+            CONF['database_save_path'],
+            CONF['database_name'],
+        ))
+    LOG.info('%s already exists ! ', db_file_path)
+    return False
+    if remote_file_exists(VM_IP, db_file_path):
+        LOG.info('%s already exists ! ', db_file_path)
+        return False
     else:
-        if file_exists(dumpfile):
-            LOG.info('%s already exists ! ', dumpfile)
-            return False
-
-    if dconf.ORACLE_FLASH_BACK:
-        LOG.info('create restore point %s for database %s in %s',
-                 dconf.RESTORE_POINT, dconf.DB_NAME, dconf.RECOVERY_FILE_DEST)
-    else:
-        LOG.info('Dump database %s to %s', dconf.DB_NAME, dumpfile)
-
-    if dconf.DB_TYPE == 'oracle':
-        if dconf.ORACLE_FLASH_BACK:
-            run_sql_script('createRestore.sh', dconf.RESTORE_POINT,
-                           dconf.RECOVERY_FILE_DEST_SIZE,
-                           dconf.RECOVERY_FILE_DEST)
+        LOG.info('Dump database %s to %s', CONF['database_name'], db_file_path)
+        # You must create a directory named dpdata through sqlplus in your Oracle database
+        if CONF['database_type'] == 'oracle':
+            cmd = 'expdp {}/{}@{} schemas={}\
+                 dumpfile={}.dump DIRECTORY=dpdata'.format(
+                'c##tpcc', 'oracle', 'orcldb', 'c##tpcc', 'orcldb')
+        elif CONF['database_type'] == 'postgres':
+            cmd = 'echo "123" | sudo -S PGPASSWORD={} \
+                pg_dump -U {} -F c -d {} > {}'.format(CONF['password'],
+                                                      CONF['username'],
+                                                      CONF['database_name'],
+                                                      db_file_path)
         else:
-            run_sql_script('dumpOracle.sh', dconf.DB_USER, dconf.DB_PASSWORD,
-                           dconf.DB_NAME, dconf.DB_DUMP_DIR)
-
-    elif dconf.DB_TYPE == 'postgres':
-        run('PGPASSWORD={} pg_dump -U {} -h {} -F c -d {} > {}'.format(
-            dconf.DB_PASSWORD, dconf.DB_USER, dconf.DB_HOST, dconf.DB_NAME,
-            dumpfile))
-    else:
-        raise Exception("Database Type {} Not Implemented !".format(
-            dconf.DB_TYPE))
-    return True
+            raise Exception("Database Type {} Not Implemented !".format(
+                CONF['database_type']))
+        remote_exec(VM_IP, cmd)
+        return True
 
 
 @task
@@ -727,31 +761,48 @@ def my_restore_remote_database():
 
 
 def _ready_to_start_oltpbench():
-    ready = False
-    if os.path.exists(dconf.CONTROLLER_LOG):
-        with open(dconf.CONTROLLER_LOG, 'r') as f:
-            content = f.read()
-        ready = 'Output the process pid to' in content
-    return ready
+    # time.sleep(1)
+    # LOG.info("/mnt/ottertune _read_to_start_olpbench executed!")
+    return (os.path.exists(CONF['controller_log']) and
+            'Output the process pid to' in open(CONF['controller_log']).read())
 
 
+# remote ready checkls
+@task
+def _ready_to_start_remote_oltpbench():
+    out = remote_exec(VM_IP, 'cat {}'.format(CONF['controller_log']))
+    # result = ('cat:' not in out and 'Output the process pid to' in out)
+    result = 'cat:' not in out
+    LOG.info('fabfile._ready_to_start_remote_oltpbench={}'.format(result))
+    return result
+
+
+@task
 def _ready_to_start_controller():
-    ready = False
-    if os.path.exists(dconf.OLTPBENCH_LOG):
-        with open(dconf.OLTPBENCH_LOG, 'r') as f:
-            content = f.read()
-        ready = 'Warmup complete, starting measurements' in content
-    return ready
+    # time.sleep(1)
+    # LOG.info("/mnt/ottertune _ready_to_start_controller execute!")
+    if IS_SYSBENCH is True:
+        return (os.path.exists(CONF['sysbench_log'])
+                and 'Threads started!' in open(CONF['sysbench_log']).read())
+    else:
+        return (os.path.exists(CONF['oltpbench_log'])
+                and 'Warmup complete, starting measurements' in open(
+                    CONF['oltpbench_log']).read())
 
 
 def _ready_to_shut_down_controller():
-    pidfile = os.path.join(dconf.CONTROLLER_HOME, 'pid.txt')
-    ready = False
-    if os.path.exists(pidfile) and os.path.exists(dconf.OLTPBENCH_LOG):
-        with open(dconf.OLTPBENCH_LOG, 'r') as f:
-            content = f.read()
-        ready = 'Output throughput samples into file' in content
-    return ready
+    # time.sleep(1)
+    # LOG.info("/mnt/ottertune _ready_to_shut_down_controller executed!")
+    pid_file_path = '../controller/pid.txt'
+    if IS_SYSBENCH is True:
+        return (os.path.exists(pid_file_path)
+                and os.path.exists(CONF['sysbench_log'])
+                and 'SQL statistics' in open(CONF['sysbench_log']).read())
+    else:
+        return (os.path.exists(pid_file_path)
+                and os.path.exists(CONF['oltpbench_log'])
+                and 'Output throughput samples into file' in open(
+                    CONF['oltpbench_log']).read())
 
 
 def clean_logs():
@@ -798,7 +849,8 @@ def loop(i):
 
     # the controller starts the first collection
     while not _ready_to_start_controller():
-        time.sleep(1)
+        # time.sleep(1)
+        pass
     signal_controller()
     LOG.info('Start the first collection')
 
@@ -934,9 +986,8 @@ def remote_loop(i):
     # check remote postgresql is ok
 
     if check_port(VM_IP, POSTGRESQL_PORT) == False:
-        LOG.warn(
-            "remote_loop: next_config can't start,"
-            "use last conf and re execute remote_loop")
+        LOG.warn("remote_loop: next_config can't start,"
+                 "use last conf and re execute remote_loop")
         # if not file_exists("next_config_last"):
         #     local('cd {} && echo "123" | sudo touch next_config_last'.
         #           format(driver_folder))
@@ -949,7 +1000,12 @@ def remote_loop(i):
     # run controller from another process
     p = Process(target=run_controller, args=())
     p.start()
+    # my_pool = Pool(1)
+    # my_pool.apply_async(run_controller, args=())
+
     LOG.info('Run the controller')
+    # only for test
+    # exit()
 
     # run oltpbench as a background job
     while not _ready_to_start_oltpbench():
@@ -970,11 +1026,15 @@ def remote_loop(i):
     # signal_kill_controller()
     LOG.info('Start the next collection, shut down the controller')
 
+    # p.terminate()
     p.join(timeout=1)
+    # my_pool.close()
+    # my_pool.join()
+
     LOG.info("fab p.join->executed")
 
     # add user defined target objective
-    # add_udf()
+    add_udf()
 
     # LOG.info("exit the main process")
     # exit()
@@ -989,12 +1049,29 @@ def remote_loop(i):
         LOG.info("fab remote_loop->get_results ")
         # get result
         response = get_result()
-
+        # check is converge or not
+        IS_CONVERGE = check_converge(response, SMOOTH_COUNT)
+        LOG.info("fab remote_loop check_converge,IS_CONVERGE={}".format(
+            IS_CONVERGE))
+        if IS_CONVERGE and i >= dconf.BASE_ITERATION_NUM:
+            LOG.info('The %s-th Loop Ends / Total Loops,IS_CONVERGE=True',
+                     i + 1)
+            exit()
         # save next config
         save_next_config(response, t=result_timestamp)
-
         # change config
         change_remote_conf()
+
+
+def check_converge(response, trheshold):
+    continue_count = response[CONTINUE_COUNT]
+    LOG.info("fabfile check_converge:continue_count={}".format(continue_count))
+    if continue_count >= trheshold:
+        LOG.info("fab check_converge the result is converge")
+        return True
+    else:
+        LOG.info("fab check_converge IS_CONVERGE={}".format(IS_CONVERGE))
+        return False
 
 
 @task
@@ -1024,6 +1101,7 @@ def run_loops(max_iter=10):
                 'metrics_before': b'{}',
                 'metrics_after': b'{}'
             }
+            # 同样的再运行一次
             response = requests.post(dconf.WEBSITE_URL + '/new_result/',
                                      files=files,
                                      data={'upload_code': dconf.UPLOAD_CODE})
@@ -1048,7 +1126,12 @@ def run_loops(max_iter=10):
 
 
 @task
-def run_remote_loops(max_iter=10):
+def run_remote_loops(max_iter=10, first=True):
+
+    if first:
+        LOG.info("fab run_remote_loops clean remote conf")
+        clean_remote_conf()
+
     # dump database if it's not done before.
     dump = dump_remote_database()
 
@@ -1081,10 +1164,18 @@ def run_remote_loops(max_iter=10):
                     # restore_remote_database()
                     pass
         time.sleep(dconf.RESTART_SLEEP_SEC)
-        LOG.info('The %s-th Loop Starts / Total Loops %s', i + 1, max_iter)
-        remote_loop(i %
-                    dconf.RELOAD_INTERVAL if dconf.RELOAD_INTERVAL > 0 else i)
-        LOG.info('The %s-th Loop Ends / Total Loops %s', i + 1, max_iter)
+        if not IS_CONVERGE:
+            LOG.info('The %s-th Loop Starts / Total Loops %s; is_converge=%s',
+                     i + 1, max_iter, IS_CONVERGE)
+            remote_loop(
+                i % dconf.RELOAD_INTERVAL if dconf.RELOAD_INTERVAL > 0 else i)
+            LOG.info('The %s-th Loop Ends / Total Loops %s; IS_CONVERGE=%s',
+                     i + 1, max_iter, IS_CONVERGE)
+        else:
+            LOG.info('The %s-th Loop  / Total Loops %s. IS_CONVERGE=%s.',
+                     i + 1, max_iter, IS_CONVERGE)
+            exit()
+            break
 
 
 @task

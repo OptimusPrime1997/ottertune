@@ -19,7 +19,6 @@ from .types import (DBMSType, LabelStyleType, MetricType, KnobUnitType,
 
 
 class BaseModel(models.Model):
-
     def __str__(self):
         return self.__unicode__()
 
@@ -73,19 +72,25 @@ class DBMSCatalog(BaseModel):
 class KnobCatalog(BaseModel):
     dbms = models.ForeignKey(DBMSCatalog)
     name = models.CharField(max_length=128)
-    vartype = models.IntegerField(choices=VarType.choices(), verbose_name="variable type")
+    vartype = models.IntegerField(choices=VarType.choices(),
+                                  verbose_name="variable type")
     unit = models.IntegerField(choices=KnobUnitType.choices())
     category = models.TextField(null=True)
     summary = models.TextField(null=True, verbose_name='description')
     description = models.TextField(null=True)
     scope = models.CharField(max_length=16)
-    minval = models.CharField(max_length=32, null=True, verbose_name="minimum value")
-    maxval = models.CharField(max_length=32, null=True, verbose_name="maximum value")
+    minval = models.CharField(max_length=32,
+                              null=True,
+                              verbose_name="minimum value")
+    maxval = models.CharField(max_length=32,
+                              null=True,
+                              verbose_name="maximum value")
     default = models.TextField(verbose_name="default value")
     enumvals = models.TextField(null=True, verbose_name="valid values")
     context = models.CharField(max_length=32)
     tunable = models.BooleanField(verbose_name="tunable")
-    resource = models.IntegerField(choices=KnobResourceType.choices(), default=4)
+    resource = models.IntegerField(choices=KnobResourceType.choices(),
+                                   default=4)
 
 
 class MetricCatalog(BaseModel):
@@ -115,17 +120,18 @@ class Project(BaseModel):
 
 
 class Hardware(BaseModel):
-
     @property
     def name(self):
         return '{} CPUs, {}GB RAM, {}GB {}'.format(
-            self.cpu, self.memory, self.storage, StorageType.name(self.storage_type))
+            self.cpu, self.memory, self.storage,
+            StorageType.name(self.storage_type))
 
     cpu = models.IntegerField(default=4, verbose_name='Number of CPUs')
     memory = models.IntegerField(default=16, verbose_name='Memory (GB)')
     storage = models.IntegerField(default=32, verbose_name='Storage (GB)')
     storage_type = models.IntegerField(choices=StorageType.choices(),
-                                       default=StorageType.SSD, verbose_name='Storage Type')
+                                       default=StorageType.SSD,
+                                       verbose_name='Storage Type')
     additional_specs = models.TextField(null=True, default=None)
 
     class Meta:  # pylint: disable=no-init
@@ -134,12 +140,10 @@ class Hardware(BaseModel):
 
 class Session(BaseModel):
 
-    TUNING_OPTIONS = OrderedDict([
-        ("tuning_session", "Tuning Session"),
-        ("no_tuning_session", "No Tuning"),
-        ("randomly_generate", "Randomly Generate"),
-        ("lhs", "Run LHS")
-    ])
+    TUNING_OPTIONS = OrderedDict([("tuning_session", "Tuning Session"),
+                                  ("no_tuning_session", "No Tuning"),
+                                  ("randomly_generate", "Randomly Generate"),
+                                  ("lhs", "Run LHS")])
 
     user = models.ForeignKey(User)
     name = models.CharField(max_length=64, verbose_name="session name")
@@ -160,19 +164,65 @@ class Session(BaseModel):
 
     upload_code = models.CharField(max_length=30, unique=True)
     tuning_session = models.CharField(choices=TUNING_OPTIONS.items(),
-                                      max_length=64, default='tuning_session',
+                                      max_length=64,
+                                      default='tuning_session',
                                       verbose_name='session type')
 
-    target_objective = models.CharField(
-        max_length=64, default=target_objectives.default())
+    target_objective = models.CharField(max_length=64,
+                                        default=target_objectives.default())
+    #     '''{
+    # "DDPG_ACTOR_HIDDEN_SIZES": [128, 128, 64],
+    # "DDPG_ACTOR_LEARNING_RATE": 0.02,
+    # "DDPG_CRITIC_HIDDEN_SIZES": [64, 128, 64],
+    # "DDPG_CRITIC_LEARNING_RATE": 0.001,
+    # "DDPG_BATCH_SIZE": 32,
+    # "DDPG_GAMMA": 0.0,
+    # "DDPG_SIMPLE_REWARD": true,
+    # "DDPG_UPDATE_EPOCHS": 30,
+    # "DDPG_USE_DEFAULT": false,
+    # "DNN_DEBUG": true,
+    # "DNN_DEBUG_INTERVAL": 100,
+    # "DNN_EXPLORE": false,
+    # "DNN_EXPLORE_ITER": 500,
+    # "DNN_GD_ITER": 100,
+    # "DNN_NOISE_SCALE_BEGIN": 0.1,
+    # "DNN_NOISE_SCALE_END": 0.0,
+    # "DNN_TRAIN_ITER": 100,
+    # "FLIP_PROB_DECAY": 0.5,
+    # "GPR_BATCH_SIZE": 3000,
+    # "GPR_DEBUG": true,
+    # "GPR_EPS": 0.001,
+    # "GPR_EPSILON": 1e-06,
+    # "GPR_LEARNING_RATE": 0.01,
+    # "GPR_LENGTH_SCALE": 2.0,
+    # "GPR_MAGNITUDE": 1.0,
+    # "GPR_MAX_ITER": 500,
+    # "GPR_MAX_TRAIN_SIZE": 7000,
+    # "GPR_MU_MULTIPLIER": 1.0,
+    # "GPR_MODEL_NAME": "BasicGP",
+    # "GPR_HP_LEARNING_RATE": 0.001,
+    # "GPR_HP_MAX_ITER": 5000,
+    # "GPR_RIDGE": 1.0,
+    # "GPR_SIGMA_MULTIPLIER": 1.0,
+    # "GPR_UCB_SCALE": 0.2,
+    # "GPR_USE_GPFLOW": true,
+    # "GPR_UCB_BETA": "get_beta_td",
+    # "IMPORTANT_KNOB_NUMBER": 10000,
+    # "INIT_FLIP_PROB": 0.3,
+    # "NUM_SAMPLES": 30,
+    # "TF_NUM_THREADS": 4,
+    # "TOP_NUM_CONFIG": 10}'''
+    # 修改了ddpg_critic_hidden_sizes=(128,256,64),
+    # ddpg_simple_reward=false
+    # 添加C_T=0.6,throughput在mix_reward中的占比
     hyperparameters = models.TextField(default='''{
     "DDPG_ACTOR_HIDDEN_SIZES": [128, 128, 64],
     "DDPG_ACTOR_LEARNING_RATE": 0.02,
-    "DDPG_CRITIC_HIDDEN_SIZES": [64, 128, 64],
+    "DDPG_CRITIC_HIDDEN_SIZES": [128, 256, 64],
     "DDPG_CRITIC_LEARNING_RATE": 0.001,
     "DDPG_BATCH_SIZE": 32,
     "DDPG_GAMMA": 0.0,
-    "DDPG_SIMPLE_REWARD": true,
+    "DDPG_SIMPLE_REWARD": false,
     "DDPG_UPDATE_EPOCHS": 30,
     "DDPG_USE_DEFAULT": false,
     "DNN_DEBUG": true,
@@ -199,14 +249,24 @@ class Session(BaseModel):
     "GPR_HP_MAX_ITER": 5000,
     "GPR_RIDGE": 1.0,
     "GPR_SIGMA_MULTIPLIER": 1.0,
-    "GPR_UCB_SCALE": 0.2,
+    "GPR_UCB_SCALE": 0.15,
     "GPR_USE_GPFLOW": true,
     "GPR_UCB_BETA": "get_beta_td",
     "IMPORTANT_KNOB_NUMBER": 10000,
     "INIT_FLIP_PROB": 0.3,
     "NUM_SAMPLES": 30,
     "TF_NUM_THREADS": 4,
-    "TOP_NUM_CONFIG": 10}''')
+    "TOP_NUM_CONFIG": 10,
+    "C_T":0.6,
+    "MIX_TYPE":"CONSTRAINT",
+    "REWARD_TYPE":"CODE",
+    "USE_DETERMINED_VALUE":true,
+    "THRESHOLD":0.15,
+    "PENALTY_REWARD":2,
+    "SECOND_CONTRAINT":340}''')
+
+    # MIX_TYPE(CONSTRAINT,LINEAR,NONE)
+    # REWARD_TYPE(CODE,PAPER,SIMPLE)
 
     def clean(self):
         if self.target_objective is None:
@@ -232,7 +292,8 @@ class SessionKnobManager(models.Manager):
         session_knobs = SessionKnob.objects.filter(
             session=session, tunable=True).prefetch_related('knob')
         session_knobs = {s.knob.pk: s for s in session_knobs}
-        knob_dicts = list(KnobCatalog.objects.filter(id__in=session_knobs.keys()).values())
+        knob_dicts = list(
+            KnobCatalog.objects.filter(id__in=session_knobs.keys()).values())
         for knob_info in knob_dicts:
             sess_knob = session_knobs[knob_info['id']]
             knob_info['minval'] = sess_knob.minval
@@ -267,10 +328,16 @@ class SessionKnobManager(models.Manager):
         return session_knob_dicts
 
     @staticmethod
-    def set_knob_min_max_tunability(session, knob_dicts, cascade=True, disable_others=False):
+    def set_knob_min_max_tunability(session,
+                                    knob_dicts,
+                                    cascade=True,
+                                    disable_others=False):
         # Returns a dict of the knob
         knob_dicts = {k.lower(): v for k, v in knob_dicts.items()}
-        session_knobs = {k.name.lower(): k for k in SessionKnob.objects.filter(session=session)}
+        session_knobs = {
+            k.name.lower(): k
+            for k in SessionKnob.objects.filter(session=session)
+        }
         for lower_name, session_knob in session_knobs.items():
             if lower_name in knob_dicts:
                 settings = knob_dicts[lower_name]
@@ -283,12 +350,15 @@ class SessionKnobManager(models.Manager):
                     session_knob.lowerbound = settings["lowerbound"]
                 session_knob.save()
                 if cascade:
-                    knob = KnobCatalog.objects.get(name=session_knob.name, dbms=session.dbms)
+                    knob = KnobCatalog.objects.get(name=session_knob.name,
+                                                   dbms=session.dbms)
                     knob.tunable = session_knob.tunable
                     if knob.vartype in (VarType.INTEGER, VarType.REAL):
-                        if knob.minval is None or session_knob.minval < float(knob.minval):
+                        if knob.minval is None or session_knob.minval < float(
+                                knob.minval):
                             knob.minval = session_knob.minval
-                        if knob.maxval is None or session_knob.maxval > float(knob.maxval):
+                        if knob.maxval is None or session_knob.maxval > float(
+                                knob.maxval):
                             knob.maxval = session_knob.maxval
                     knob.save()
             elif disable_others:
@@ -298,7 +368,6 @@ class SessionKnobManager(models.Manager):
 
 
 class SessionKnob(BaseModel):
-
     @property
     def name(self):
         return self.knob.name
@@ -306,10 +375,18 @@ class SessionKnob(BaseModel):
     objects = SessionKnobManager()
     session = models.ForeignKey(Session)
     knob = models.ForeignKey(KnobCatalog)
-    minval = models.CharField(max_length=32, null=True, verbose_name="minimum value")
-    maxval = models.CharField(max_length=32, null=True, verbose_name="maximum value")
-    upperbound = models.CharField(max_length=32, null=True, verbose_name="upperbound")
-    lowerbound = models.CharField(max_length=32, null=True, verbose_name="lowerbound")
+    minval = models.CharField(max_length=32,
+                              null=True,
+                              verbose_name="minimum value")
+    maxval = models.CharField(max_length=32,
+                              null=True,
+                              verbose_name="maximum value")
+    upperbound = models.CharField(max_length=32,
+                                  null=True,
+                                  verbose_name="upperbound")
+    lowerbound = models.CharField(max_length=32,
+                                  null=True,
+                                  verbose_name="lowerbound")
     tunable = models.BooleanField(verbose_name="tunable")
 
 
@@ -325,7 +402,6 @@ class DataModel(BaseModel):
 
 
 class DataManager(models.Manager):
-
     @staticmethod
     def create_name(data_obj, key):
         ts = data_obj.creation_time.strftime("%m-%d-%y")
@@ -333,11 +409,9 @@ class DataManager(models.Manager):
 
 
 class KnobDataManager(DataManager):
-
     def create_knob_data(self, session, knobs, data, dbms):
         try:
-            return KnobData.objects.get(session=session,
-                                        knobs=knobs)
+            return KnobData.objects.get(session=session, knobs=knobs)
         except KnobData.DoesNotExist:
             knob_data = self.create(session=session,
                                     knobs=knobs,
@@ -356,7 +430,6 @@ class KnobData(DataModel):
 
 
 class MetricDataManager(DataManager):
-
     def create_metric_data(self, session, metrics, data, dbms):
         metric_data = self.create(session=session,
                                   metrics=metrics,
@@ -375,11 +448,13 @@ class MetricData(DataModel):
 
 
 class WorkloadManager(models.Manager):
-
     def create_workload(self, dbms, hardware, name, project):
         # (dbms,hardware,name) should be unique for each workload
         try:
-            return Workload.objects.get(dbms=dbms, hardware=hardware, name=name, project=project)
+            return Workload.objects.get(dbms=dbms,
+                                        hardware=hardware,
+                                        name=name,
+                                        project=project)
         except Workload.DoesNotExist:
             return self.create(dbms=dbms,
                                hardware=hardware,
@@ -432,7 +507,6 @@ class Workload(BaseModel):
 
 
 class PipelineRunManager(models.Manager):
-
     def get_latest(self):
         return self.all().exclude(end_time=None).first()
 
@@ -465,26 +539,28 @@ class PipelineData(models.Model):
 
 
 class ResultManager(models.Manager):
-
-    def create_result(self, session, dbms, workload,
-                      knob_data, metric_data,
+    def create_result(self,
+                      session,
+                      dbms,
+                      workload,
+                      knob_data,
+                      metric_data,
                       observation_start_time,
                       observation_end_time,
                       observation_time,
                       task_ids=None,
                       next_config=None):
-        return self.create(
-            session=session,
-            dbms=dbms,
-            workload=workload,
-            knob_data=knob_data,
-            metric_data=metric_data,
-            observation_start_time=observation_start_time,
-            observation_end_time=observation_end_time,
-            observation_time=observation_time,
-            task_ids=task_ids,
-            next_configuration=next_config,
-            creation_time=now())
+        return self.create(session=session,
+                           dbms=dbms,
+                           workload=workload,
+                           knob_data=knob_data,
+                           metric_data=metric_data,
+                           observation_start_time=observation_start_time,
+                           observation_end_time=observation_end_time,
+                           observation_time=observation_time,
+                           task_ids=task_ids,
+                           next_configuration=next_config,
+                           creation_time=now())
 
 
 class Result(BaseModel):
@@ -502,8 +578,13 @@ class Result(BaseModel):
     observation_time = models.FloatField()
     task_ids = models.TextField(null=True)
     next_configuration = models.TextField(null=True)
-    pipeline_knobs = models.ForeignKey(PipelineData, null=True, related_name='pipeline_knobs')
-    pipeline_metrics = models.ForeignKey(PipelineData, null=True, related_name='pipeline_metrics')
+    pipeline_knobs = models.ForeignKey(PipelineData,
+                                       null=True,
+                                       related_name='pipeline_knobs')
+    pipeline_metrics = models.ForeignKey(PipelineData,
+                                         null=True,
+                                         related_name='pipeline_metrics')
+    reward = models.CharField(null=True, max_length=64)
 
     def __unicode__(self):
         return str(self.pk)
@@ -529,10 +610,18 @@ class ExecutionTime(models.Model):
 
     @property
     def event(self):
-        return '.'.join((e for e in (self.module, self.function, self.tag) if e))
+        return '.'.join(
+            (e for e in (self.module, self.function, self.tag) if e))
 
-    def save(self, force_insert=False, force_update=False, using=None, update_fields=None):
+    def save(self,
+             force_insert=False,
+             force_update=False,
+             using=None,
+             update_fields=None):
         if isinstance(self.start_time, (int, float)):
-            self.start_time = datetime.fromtimestamp(int(self.start_time), timezone(TIME_ZONE))
-        super().save(force_insert=force_insert, force_update=force_update, using=using,
+            self.start_time = datetime.fromtimestamp(int(self.start_time),
+                                                     timezone(TIME_ZONE))
+        super().save(force_insert=force_insert,
+                     force_update=force_update,
+                     using=using,
                      update_fields=update_fields)

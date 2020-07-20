@@ -40,14 +40,15 @@ from . import models as app_models
 from . import utils
 from .db import parser, target_objectives
 from .forms import NewResultForm, ProjectForm, SessionForm, SessionKnobForm
-from .models import (BackupData, DBMSCatalog, ExecutionTime, Hardware, KnobCatalog, KnobData,
-                     MetricCatalog, MetricData, PipelineRun, Project, Result, Session,
-                     SessionKnob, User, Workload, PipelineData)
+from .models import (BackupData, DBMSCatalog, ExecutionTime, Hardware,
+                     KnobCatalog, KnobData, MetricCatalog, MetricData,
+                     PipelineRun, Project, Result, Session, SessionKnob, User,
+                     Workload, PipelineData)
 from .tasks import train_ddpg
-from .types import (DBMSType, KnobUnitType, MetricType,
-                    TaskType, VarType, WorkloadStatusType, AlgorithmType, PipelineTaskType)
+from .types import (DBMSType, KnobUnitType, MetricType, TaskType, VarType,
+                    WorkloadStatusType, AlgorithmType, PipelineTaskType)
 from .utils import (JSONUtil, LabelUtil, MediaUtil, TaskUtil)
-from .settings import LOG_DIR, TIME_ZONE, CHECK_CELERY
+from .settings import LOG_DIR, TIME_ZONE, CHECK_CELERY, SMOOTH_THRESHOLD
 
 from .set_default_knobs import set_default_knobs
 
@@ -133,10 +134,11 @@ def redirect_home(request):  # pylint: disable=unused-argument
 @login_required(login_url=reverse_lazy('login'))
 def home_projects_view(request):
     form_labels = Project.get_labels()
-    form_labels.update(LabelUtil.style_labels({
-        'button_create': 'create a new project',
-        'button_delete': 'delete selected projects',
-    }))
+    form_labels.update(
+        LabelUtil.style_labels({
+            'button_create': 'create a new project',
+            'button_delete': 'delete selected projects',
+        }))
     form_labels['title'] = 'Your Projects'
     projects = Project.objects.filter(user=request.user)
     show_descriptions = any([proj.description for proj in projects])
@@ -163,7 +165,9 @@ def create_or_edit_project(request, project_id=''):
             project.creation_time = ts
             project.last_update = ts
         else:
-            project = get_object_or_404(Project, pk=project_id, user=request.user)
+            project = get_object_or_404(Project,
+                                        pk=project_id,
+                                        user=request.user)
             form_kwargs.update(instance=project)
             form = ProjectForm(request.POST, **form_kwargs)
             if not form.is_valid():
@@ -171,7 +175,8 @@ def create_or_edit_project(request, project_id=''):
             project.last_update = now()
 
         project.save()
-        return redirect(reverse('project_sessions', kwargs={'project_id': project.pk}))
+        return redirect(
+            reverse('project_sessions', kwargs={'project_id': project.pk}))
     else:
         if project_id == '':
             project = None
@@ -199,13 +204,15 @@ def project_sessions_view(request, project_id):
     sessions = Session.objects.filter(project=project_id)
     project = Project.objects.get(pk=project_id)
     form_labels = Session.get_labels()
-    form_labels.update(LabelUtil.style_labels({
-        'button_delete': 'delete selected session',
-        'button_create': 'create a new session',
-    }))
+    form_labels.update(
+        LabelUtil.style_labels({
+            'button_delete': 'delete selected session',
+            'button_create': 'create a new session',
+        }))
     form_labels['title'] = "Your Sessions"
     for session in sessions:
-        session.session_type_name = Session.TUNING_OPTIONS[session.tuning_session]
+        session.session_type_name = Session.TUNING_OPTIONS[
+            session.tuning_session]
         session.algorithm_name = AlgorithmType.name(session.algorithm)
 
     context = {
@@ -243,8 +250,8 @@ def session_view(request, project_id, session_id):
             workloads[res_workload.name].add(res_workload)
 
     # Sort so names will be ordered in the sidebar
-    workloads = OrderedDict([(k, sorted(list(v))) for
-                             k, v in sorted(workloads.items())])
+    workloads = OrderedDict([(k, sorted(list(v)))
+                             for k, v in sorted(workloads.items())])
     dbmss = OrderedDict(sorted(dbmss.items()))
 
     if len(workloads) > 0:
@@ -295,14 +302,19 @@ def session_view(request, project_id, session_id):
 @login_required(login_url=reverse_lazy('login'))
 def create_or_edit_session(request, project_id, session_id=''):
     project = get_object_or_404(Project, pk=project_id, user=request.user)
-    form_kwargs = dict(user_id=request.user.pk, project_id=project_id, session_id=session_id)
+    form_kwargs = dict(user_id=request.user.pk,
+                       project_id=project_id,
+                       session_id=session_id)
     if request.method == 'POST':
         if not session_id:
             # Create a new session from the form contents
             form = SessionForm(request.POST, **form_kwargs)
             if not form.is_valid():
-                return render(request, 'edit_session.html',
-                              {'project': project, 'form': form, 'session': None})
+                return render(request, 'edit_session.html', {
+                    'project': project,
+                    'form': form,
+                    'session': None
+                })
             session = form.save(commit=False)
             session.user = request.user
             session.project = project
@@ -318,15 +330,22 @@ def create_or_edit_session(request, project_id, session_id=''):
             form_kwargs.update(instance=session)
             form = SessionForm(request.POST, **form_kwargs)
             if not form.is_valid():
-                return render(request, 'edit_session.html',
-                              {'project': project, 'form': form, 'session': session})
+                return render(request, 'edit_session.html', {
+                    'project': project,
+                    'form': form,
+                    'session': session
+                })
             if form.cleaned_data['gen_upload_code'] is True:
                 session.upload_code = MediaUtil.upload_code_generator()
             session.last_update = now()
             form.save()
             session.save()
-        return redirect(reverse('session', kwargs={'project_id': project_id,
-                                                   'session_id': session.pk}))
+        return redirect(
+            reverse('session',
+                    kwargs={
+                        'project_id': project_id,
+                        'session_id': session.pk
+                    }))
     else:
         if session_id:
             # Return a pre-filled form for editing an existing session
@@ -338,10 +357,13 @@ def create_or_edit_session(request, project_id, session_id=''):
             session = None
             form_kwargs.update(
                 initial={
-                    'dbms': DBMSCatalog.objects.get(
-                        type=DBMSType.POSTGRES, version='9.6'),
-                    'algorithm': AlgorithmType.GPR,
-                    'target_objective': target_objectives.default()
+                    'dbms':
+                    DBMSCatalog.objects.get(type=DBMSType.POSTGRES,
+                                            version='9.6'),
+                    'algorithm':
+                    AlgorithmType.GPR,
+                    'target_objective':
+                    target_objectives.default()
                 })
             form = SessionForm(**form_kwargs)
         context = {
@@ -359,29 +381,30 @@ def edit_knobs(request, project_id, session_id):
     if request.method == 'POST':
         form = SessionKnobForm(request.POST)
         if not form.is_valid():
-            return render(request, 'edit_knobs.html',
-                          {'project': project, 'session': session, 'form': form})
+            return render(request, 'edit_knobs.html', {
+                'project': project,
+                'session': session,
+                'form': form
+            })
         instance = form.instance
         instance.session = session
         instance.knob = KnobCatalog.objects.get(dbms=session.dbms,
                                                 name=form.cleaned_data["name"])
-        SessionKnob.objects.filter(session=instance.session, knob=instance.knob).delete()
+        SessionKnob.objects.filter(session=instance.session,
+                                   knob=instance.knob).delete()
         instance.save()
         return HttpResponse(status=204)
     else:
-        knobs = SessionKnob.objects.filter(session=session).prefetch_related(
-            'knob').order_by('-tunable', 'knob__name')
+        knobs = SessionKnob.objects.filter(
+            session=session).prefetch_related('knob').order_by(
+                '-tunable', 'knob__name')
         forms = []
         for knob in knobs:
             knob_values = model_to_dict(knob)
             knob_values['session'] = session
             knob_values['name'] = knob.knob.name
             forms.append(SessionKnobForm(initial=knob_values))
-        context = {
-            'project': project,
-            'session': session,
-            'forms': forms
-        }
+        context = {'project': project, 'session': session, 'forms': forms}
         return render(request, 'edit_knobs.html', context)
 
 
@@ -389,9 +412,8 @@ def edit_knobs(request, project_id, session_id):
 def delete_session(request, project_id):
     sids = request.POST.getlist('sessions', [])
     Session.objects.filter(pk__in=sids, user=request.user).delete()
-    return redirect(reverse(
-        'project_sessions',
-        kwargs={'project_id': project_id}))
+    return redirect(
+        reverse('project_sessions', kwargs={'project_id': project_id}))
 
 
 @login_required(login_url=reverse_lazy('login'))
@@ -400,7 +422,8 @@ def result_view(request, project_id, session_id, result_id):
     session = target.session
 
     # default_metrics = [session.target_objective]
-    metric_meta = target_objectives.get_metric_metadata(session.dbms.pk, session.target_objective)
+    metric_meta = target_objectives.get_metric_metadata(
+        session.dbms.pk, session.target_objective)
     # metric_data = JSONUtil.loads(target.metric_data.data)
 
     # default_metrics = {mname: metric_data[mname] * metric_meta[mname].scale
@@ -421,8 +444,9 @@ def result_view(request, project_id, session_id, result_id):
             next_conf_available = False
         next_conf = ''
         cfg = target.next_configuration
-        LOG.debug("status: %s, next_conf_available: %s, next_conf: %s, type: %s",
-                  status, next_conf_available, cfg, type(cfg))
+        LOG.debug(
+            "status: %s, next_conf_available: %s, next_conf: %s, type: %s",
+            status, next_conf_available, cfg, type(cfg))
 
     if next_conf_available:
         try:
@@ -434,14 +458,16 @@ def result_view(request, project_id, session_id, result_id):
                 next_conf += '{: <{kwidth}}  = {: <{vwidth}}\n'.format(
                     k, v, kwidth=kwidth, vwidth=vwidth)
         except Exception as e:  # pylint: disable=broad-except
-            LOG.exception("Failed to format the next config (type=%s): %s.\n\n%s\n",
-                          type(cfg), cfg, e)
+            LOG.exception(
+                "Failed to format the next config (type=%s): %s.\n\n%s\n",
+                type(cfg), cfg, e)
 
     form_labels = Result.get_labels()
-    form_labels.update(LabelUtil.style_labels({
-        'status': 'status',
-        'next_conf': 'next configuration',
-    }))
+    form_labels.update(
+        LabelUtil.style_labels({
+            'status': 'status',
+            'next_conf': 'next configuration',
+        }))
     form_labels['title'] = 'Result Info'
     context = {
         'result': target,
@@ -463,13 +489,16 @@ def new_result(request):
 
         if not form.is_valid():
             LOG.warning("New result form is not valid: %s", str(form.errors))
-            return HttpResponse("New result form is not valid: " + str(form.errors), status=400)
+            return HttpResponse("New result form is not valid: " +
+                                str(form.errors),
+                                status=400)
         upload_code = form.cleaned_data['upload_code']
         try:
             session = Session.objects.get(upload_code=upload_code)
         except Session.DoesNotExist:
             LOG.warning("Invalid upload code: %s", upload_code)
-            return HttpResponse("Invalid upload code: " + upload_code, status=400)
+            return HttpResponse("Invalid upload code: " + upload_code,
+                                status=400)
 
         execution_times = form.cleaned_data['execution_times']
         return handle_result_files(session, request.FILES, execution_times)
@@ -486,14 +515,18 @@ def handle_result_files(session, files, execution_times=None):
 
     # Find worst throughput,and set penalty target value
     past_metrics = MetricData.objects.filter(session=session)
-    metric_meta = target_objectives.get_instance(session.dbms.pk, session.target_objective)
+    metric_meta = target_objectives.get_instance(session.dbms.pk,
+                                                 session.target_objective)
+    #choose minimum of  last metric target objective and worst metric target objective
     if len(past_metrics) > 0:
         worst_metric = past_metrics.order_by('-id').first()
-        worst_target_value = JSONUtil.loads(worst_metric.data)[session.target_objective]
+        worst_target_value = JSONUtil.loads(
+            worst_metric.data)[session.target_objective]
         for past_metric in past_metrics:
             if '*' in past_metric.name:
                 continue
-            target_value = JSONUtil.loads(past_metric.data)[session.target_objective]
+            target_value = JSONUtil.loads(
+                past_metric.data)[session.target_objective]
             if metric_meta.improvement == target_objectives.MORE_IS_BETTER:
                 if worst_target_value is None or target_value < worst_target_value:
                     worst_target_value = target_value
@@ -503,7 +536,9 @@ def handle_result_files(session, files, execution_times=None):
                     worst_target_value = target_value
                     worst_metric = past_metric
         LOG.debug("Worst target value so far is: %d", worst_target_value)
-        penalty_factor = JSONUtil.loads(session.hyperparameters).get('PENALTY_FACTOR', 2)
+        penalty_factor = JSONUtil.loads(session.hyperparameters).get(
+            'PENALTY_FACTOR', 2)
+        # calculate a penalty value,more *2,less /2
         if metric_meta.improvement == target_objectives.MORE_IS_BETTER:
             penalty_target_value = worst_target_value / penalty_factor
         else:
@@ -520,16 +555,18 @@ def handle_result_files(session, files, execution_times=None):
     # If database crashed on restart, pull latest result and worst throughput so far
     if 'error' in summary and summary['error'] == "DB_RESTART_ERROR":
 
-        LOG.debug("Error in restarting database")
+        LOG.debug("Error in restarting database,worst_metric={}".format(
+            worst_metric))
 
         worst_result = Result.objects.filter(metric_data=worst_metric).first()
-        last_result = Result.objects.filter(session=session).order_by("-id").first()
+        last_result = Result.objects.filter(
+            session=session).order_by("-id").first()
         backup_data = BackupData.objects.filter(result=worst_result).first()
         last_conf = JSONUtil.loads(last_result.next_configuration)
         last_conf = last_conf["recommendation"]
         last_conf = parser.convert_dbms_knobs(last_result.dbms.pk, last_conf)
 
-        # Copy worst data and modify
+        # Copy worst data and modify to last knobs
         knob_data = worst_result.knob_data
         knob_data.pk = None
         all_knobs = JSONUtil.loads(knob_data.knobs)
@@ -551,11 +588,13 @@ def handle_result_files(session, files, execution_times=None):
         knob_data.name = '#'.join(knob_name_parts)
         knob_data.creation_time = now()
         knob_data.save()
-        knob_data = KnobData.objects.filter(session=session).order_by("-id").first()
+        knob_data = KnobData.objects.filter(
+            session=session).order_by("-id").first()
 
         metric_data = worst_result.metric_data
         metric_data.pk = None
-        metric_name_parts = last_result.metric_data.name.split('*')[0].split('#')
+        metric_name_parts = last_result.metric_data.name.split('*')[0].split(
+            '#')
         metric_name_parts[-1] = str(int(metric_name_parts[-1]) + 1) + '*'
         metric_data.name = '#'.join(metric_name_parts)
         metric_cpy = JSONUtil.loads(metric_data.data)
@@ -563,7 +602,8 @@ def handle_result_files(session, files, execution_times=None):
         metric_data.data = JSONUtil.dumps(metric_cpy)
         metric_data.creation_time = now()
         metric_data.save()
-        metric_data = MetricData.objects.filter(session=session).order_by("-id").first()
+        metric_data = MetricData.objects.filter(
+            session=session).order_by("-id").first()
 
         result = worst_result
         result.pk = None
@@ -582,6 +622,7 @@ def handle_result_files(session, files, execution_times=None):
         backup_data.save()
 
     else:
+        # common process
         dbms_type = DBMSType.type(summary['database_type'])
         dbms_version = summary['database_version']
         workload_name = summary['workload_name']
@@ -597,14 +638,15 @@ def handle_result_files(session, files, execution_times=None):
 
         # Check if workload name only contains alpha-numeric, underscore and hyphen
         if not re.match('^[a-zA-Z0-9_-]+$', workload_name):
-            return HttpResponse('Your workload name ' + workload_name + ' contains '
+            return HttpResponse('Your workload name ' + workload_name +
+                                ' contains '
                                 'invalid characters! It should only contain '
                                 'alpha-numeric, underscore(_) and hyphen(-)')
 
         try:
             # Check that we support this DBMS and version
-            dbms = DBMSCatalog.objects.get(
-                type=dbms_type, version=dbms_version)
+            dbms = DBMSCatalog.objects.get(type=dbms_type,
+                                           version=dbms_version)
         except ObjectDoesNotExist:
             return HttpResponse('{} v{} is not yet supported.'.format(
                 dbms_type, dbms_version))
@@ -637,8 +679,19 @@ def handle_result_files(session, files, execution_times=None):
             ('metrics_before', initial_metric_diffs),
             ('metrics_after', final_metric_diffs),
         ])
+        # change convert_dbms_metrics to my_convert_dbms_metrics---start
+        # LOG.info("views.handle_result_files use my_convert_dbms_metrics start")
+        # LOG.info(
+        #     'views.handle_result_files LATENCY_99 in dict={},metric_dict={},target_objective={}'
+        #     .format(target_objectives.LATENCY_99 in metric_dict.keys(),
+        #             metric_dict, session.target_objective))
+        metric_dict[target_objectives.LATENCY_99] = summary[
+            target_objectives.LATENCY_99]
         numeric_metric_dict = parser.convert_dbms_metrics(
             dbms.pk, metric_dict, observation_time, session.target_objective)
+        numeric_metric_dict[target_objectives.LATENCY_99] = float(
+            metric_dict[target_objectives.LATENCY_99])
+        # change convert_dbms_metrics to my_convert_dbms_metrics---end
         metric_data = MetricData.objects.create_metric_data(
             session, JSONUtil.dumps(metric_dict, pprint=True, sort=True),
             JSONUtil.dumps(numeric_metric_dict, pprint=True, sort=True), dbms)
@@ -649,13 +702,15 @@ def handle_result_files(session, files, execution_times=None):
             metric_data.save()
 
         # Create a new workload if this one does not already exist
-        workload = Workload.objects.create_workload(
-            dbms, session.hardware, workload_name, session.project)
+        workload = Workload.objects.create_workload(dbms, session.hardware,
+                                                    workload_name,
+                                                    session.project)
 
         # Save this result
-        result = Result.objects.create_result(
-            session, dbms, workload, knob_data, metric_data,
-            start_time, end_time, observation_time)
+        result = Result.objects.create_result(session, dbms, workload,
+                                              knob_data, metric_data,
+                                              start_time, end_time,
+                                              observation_time)
         result.save()
 
         # Workload is now modified so backgroundTasks can make calculation
@@ -664,7 +719,8 @@ def handle_result_files(session, files, execution_times=None):
 
         # Save all original data
         backup_data = BackupData.objects.create(
-            result=result, raw_knobs=files['knobs'],
+            result=result,
+            raw_knobs=files['knobs'],
             raw_initial_metrics=files['metrics_before'],
             raw_final_metrics=files['metrics_after'],
             raw_summary=files['summary'],
@@ -726,23 +782,34 @@ def handle_result_files(session, files, execution_times=None):
                 start_ts = float(start_ts)
                 end_ts = float(end_ts)
                 exec_time = end_ts - start_ts
-                start_time = datetime.fromtimestamp(int(start_ts), timezone(TIME_ZONE))
+                start_time = datetime.fromtimestamp(int(start_ts),
+                                                    timezone(TIME_ZONE))
                 batch.append(
-                    ExecutionTime(module=module, function=fn, tag=tag, start_time=start_time,
-                                  execution_time=exec_time, result=result))
+                    ExecutionTime(module=module,
+                                  function=fn,
+                                  tag=tag,
+                                  start_time=start_time,
+                                  execution_time=exec_time,
+                                  result=result))
             ExecutionTime.objects.bulk_create(batch)
         except Exception:  # pylint: disable=broad-except
-            LOG.warning("Error parsing execution times:\n%s", execution_times, exc_info=True)
-    LOG.info("Result stored successfully! Running tuner...({}, status={}) Result ID:{}"
-                        .format(celery_status, response.status, result_id))
-    return HttpResponse("Result stored successfully! Running tuner...({}, status={}) Result ID:{}"
-                        .format(celery_status, response.status, result_id))
+            LOG.warning("Error parsing execution times:\n%s",
+                        execution_times,
+                        exc_info=True)
+    LOG.info(
+        "Result stored successfully! Running tuner...({}, status={}) Result ID:{}"
+        .format(celery_status, response.status, result_id))
+    return HttpResponse(
+        "Result stored successfully! Running tuner...({}, status={}) Result ID:{}"
+        .format(celery_status, response.status, result_id))
 
 
 @login_required(login_url=reverse_lazy('login'))
 def dbms_knobs_reference(request, dbms_name, version, knob_name):
-    knob = get_object_or_404(KnobCatalog, dbms__type=DBMSType.type(dbms_name),
-                             dbms__version=version, name=knob_name)
+    knob = get_object_or_404(KnobCatalog,
+                             dbms__type=DBMSType.type(dbms_name),
+                             dbms__version=version,
+                             name=knob_name)
     labels = KnobCatalog.get_labels()
     list_items = OrderedDict()
     if knob.category is not None:
@@ -777,9 +844,10 @@ def dbms_knobs_reference(request, dbms_name, version, knob_name):
 
 @login_required(login_url=reverse_lazy('login'))
 def dbms_metrics_reference(request, dbms_name, version, metric_name):
-    metric = get_object_or_404(
-        MetricCatalog, dbms__type=DBMSType.type(dbms_name),
-        dbms__version=version, name=metric_name)
+    metric = get_object_or_404(MetricCatalog,
+                               dbms__type=DBMSType.type(dbms_name),
+                               dbms__version=version,
+                               name=metric_name)
     labels = MetricCatalog.get_labels()
     list_items = OrderedDict()
     list_items[labels['scope']] = metric.scope
@@ -799,18 +867,17 @@ def dbms_metrics_reference(request, dbms_name, version, metric_name):
 def knob_data_view(request, project_id, session_id, data_id):  # pylint: disable=unused-argument
     knob_data = get_object_or_404(KnobData, pk=data_id)
     labels = KnobData.get_labels()
-    labels.update(LabelUtil.style_labels({
-        'featured_data': 'tunable dbms parameters',
-        'all_data': 'all dbms parameters',
-    }))
+    labels.update(
+        LabelUtil.style_labels({
+            'featured_data': 'tunable dbms parameters',
+            'all_data': 'all dbms parameters',
+        }))
     labels['title'] = 'DBMS Configuration'
-    context = {
-        'labels': labels,
-        'data_type': 'knobs'
-    }
+    context = {'labels': labels, 'data_type': 'knobs'}
     result = Result.objects.filter(knob_data=knob_data)[0]
     session = get_object_or_404(Session, pk=session_id)
-    target_obj = JSONUtil.loads(result.metric_data.data)[session.target_objective]
+    target_obj = JSONUtil.loads(
+        result.metric_data.data)[session.target_objective]
     return dbms_data_view(request, context, knob_data, session, target_obj)
 
 
@@ -818,18 +885,17 @@ def knob_data_view(request, project_id, session_id, data_id):  # pylint: disable
 def metric_data_view(request, project_id, session_id, data_id):  # pylint: disable=unused-argument
     metric_data = get_object_or_404(MetricData, pk=data_id)
     labels = MetricData.get_labels()
-    labels.update(LabelUtil.style_labels({
-        'featured_data': 'numeric dbms metrics',
-        'all_data': 'all dbms metrics',
-    }))
+    labels.update(
+        LabelUtil.style_labels({
+            'featured_data': 'numeric dbms metrics',
+            'all_data': 'all dbms metrics',
+        }))
     labels['title'] = 'DBMS Metrics'
-    context = {
-        'labels': labels,
-        'data_type': 'metrics'
-    }
+    context = {'labels': labels, 'data_type': 'metrics'}
     result = Result.objects.filter(metric_data=metric_data)[0]
     session = get_object_or_404(Session, pk=session_id)
-    target_obj = JSONUtil.loads(result.metric_data.data)[session.target_objective]
+    target_obj = JSONUtil.loads(
+        result.metric_data.data)[session.target_objective]
     return dbms_data_view(request, context, metric_data, session, target_obj)
 
 
@@ -838,9 +904,9 @@ def dbms_data_view(request, context, dbms_data, session, target_obj):
     dbms_id = session.dbms.pk
 
     def _format_knobs(_dict):
-        if data_type == 'knobs' and session.dbms.type in (DBMSType.ORACLE,):
-            _knob_meta = KnobCatalog.objects.filter(
-                dbms_id=dbms_id, unit=KnobUnitType.BYTES)
+        if data_type == 'knobs' and session.dbms.type in (DBMSType.ORACLE, ):
+            _knob_meta = KnobCatalog.objects.filter(dbms_id=dbms_id,
+                                                    unit=KnobUnitType.BYTES)
             _parser = parser._get(dbms_id)  # pylint: disable=protected-access
             for _meta in _knob_meta:
                 if _meta.name in _dict:
@@ -848,20 +914,25 @@ def dbms_data_view(request, context, dbms_data, session, target_obj):
                         _v = int(_dict[_meta.name])
                         _v = _parser.format_integer(_v, _meta)
                     except (ValueError, TypeError):
-                        LOG.warning("Error parsing knob %s=%s.", _meta.name,
-                                    _v, exc_info=True)
+                        LOG.warning("Error parsing knob %s=%s.",
+                                    _meta.name,
+                                    _v,
+                                    exc_info=True)
                     _dict[_meta.name] = _v
 
     if data_type == 'knobs':
         model_class = KnobData
-        featured_names = set(SessionKnob.objects.filter(
-            session=session, tunable=True).values_list(
-                'knob__name', flat=True))
+        featured_names = set(
+            SessionKnob.objects.filter(session=session,
+                                       tunable=True).values_list('knob__name',
+                                                                 flat=True))
     else:
         model_class = MetricData
-        featured_names = set(MetricCatalog.objects.filter(
-            dbms=session.dbms, metric_type__in=MetricType.numeric()).values_list(
-                'name', flat=True))
+        featured_names = set(
+            MetricCatalog.objects.filter(
+                dbms=session.dbms,
+                metric_type__in=MetricType.numeric()).values_list('name',
+                                                                  flat=True))
 
     obj_data = getattr(dbms_data, data_type)
     all_data_dict = JSONUtil.loads(obj_data)
@@ -869,9 +940,11 @@ def dbms_data_view(request, context, dbms_data, session, target_obj):
 
     featured_dict = OrderedDict([(k, v) for k, v in all_data_dict.items()
                                  if k in featured_names])
-    target_inst = target_objectives.get_instance(dbms_id, session.target_objective)
+    target_inst = target_objectives.get_instance(dbms_id,
+                                                 session.target_objective)
     target_obj_name = target_inst.pprint
-    target_fmt = "({}: {{v:.0f}}{})".format(target_obj_name, target_inst.short_unit).format
+    target_fmt = "({}: {{v:.0f}}{})".format(target_obj_name,
+                                            target_inst.short_unit).format
     target_obj = target_fmt(v=target_obj)
 
     comp_id = request.GET.get('compare', 'none')
@@ -881,11 +954,14 @@ def dbms_data_view(request, context, dbms_data, session, target_obj):
         comp_dict = JSONUtil.loads(comp_data)
         _format_knobs(comp_dict)
 
-        all_data = [(k, v, comp_dict[k]) for k, v in list(all_data_dict.items())]
-        featured_data = [(k, v, comp_dict[k]) for k, v in list(featured_dict.items())]
+        all_data = [(k, v, comp_dict[k])
+                    for k, v in list(all_data_dict.items())]
+        featured_data = [(k, v, comp_dict[k])
+                         for k, v in list(featured_dict.items())]
 
         if data_type == 'knobs':
-            met_data = Result.objects.filter(knob_data=compare_obj)[0].metric_data.data
+            met_data = Result.objects.filter(
+                knob_data=compare_obj)[0].metric_data.data
         else:
             met_data = dbms_data.data
 
@@ -895,7 +971,8 @@ def dbms_data_view(request, context, dbms_data, session, target_obj):
         all_data = list(all_data_dict.items())
         featured_data = list(featured_dict.items())
         cmp_target_obj = ""
-    peer_data = model_class.objects.filter(session=session).exclude(pk=dbms_data.pk)
+    peer_data = model_class.objects.filter(session=session).exclude(
+        pk=dbms_data.pk)
 
     context['all_data'] = all_data
     context['featured_data'] = featured_data
@@ -912,32 +989,35 @@ def workload_view(request, project_id, session_id, wkld_id):  # pylint: disable=
     workload = get_object_or_404(Workload, pk=wkld_id)
     session = get_object_or_404(Session, pk=session_id)
 
-    knob_confs = KnobData.objects.filter(dbms=session.dbms,
-                                         session=session)
+    knob_confs = KnobData.objects.filter(dbms=session.dbms, session=session)
     knob_conf_map = {}
     for conf in knob_confs:
         latest_result = Result.objects.filter(
-            session=session, knob_data=conf, workload=workload).order_by(
-                '-observation_end_time').first()
+            session=session, knob_data=conf,
+            workload=workload).order_by('-observation_end_time').first()
         if not latest_result:
             continue
         knob_conf_map[conf.name] = [conf, latest_result]
-    knob_conf_map = OrderedDict(sorted(list(knob_conf_map.items()), key=lambda x: x[1][0].pk))
+    knob_conf_map = OrderedDict(
+        sorted(list(knob_conf_map.items()), key=lambda x: x[1][0].pk))
     default_knob_confs = [c for c, _ in list(knob_conf_map.values())][:5]
     LOG.debug("default_knob_confs: %s", default_knob_confs)
 
-    metric_meta = target_objectives.get_metric_metadata(session.dbms.pk, session.target_objective)
+    metric_meta = target_objectives.get_metric_metadata(
+        session.dbms.pk, session.target_objective)
     default_metrics = [session.target_objective]
 
     labels = Workload.get_labels()
     labels['title'] = 'Workload Information'
-    context = {'workload': workload,
-               'knob_confs': knob_conf_map,
-               'metric_meta': metric_meta,
-               'knob_data': default_knob_confs,
-               'default_metrics': default_metrics,
-               'labels': labels,
-               'session_id': session_id}
+    context = {
+        'workload': workload,
+        'knob_confs': knob_conf_map,
+        'metric_meta': metric_meta,
+        'knob_data': default_knob_confs,
+        'default_metrics': default_metrics,
+        'labels': labels,
+        'session_id': session_id
+    }
     return render(request, 'workload.html', context)
 
 
@@ -946,9 +1026,9 @@ def download_next_config(request):
     data = request.GET
     result_id = data['id']
     res = Result.objects.get(pk=result_id)
-    response = HttpResponse(res.next_configuration,
-                            content_type='text/plain')
-    response['Content-Disposition'] = 'attachment; filename=result_' + str(result_id) + '.cnf'
+    response = HttpResponse(res.next_configuration, content_type='text/plain')
+    response['Content-Disposition'] = 'attachment; filename=result_' + str(
+        result_id) + '.cnf'
     return response
 
 
@@ -959,7 +1039,8 @@ def download_debug_info(request, project_id, session_id):  # pylint: disable=unu
     file = ContentFile(content.getvalue())
     response = HttpResponse(file, content_type='application/x-gzip')
     response['Content-Length'] = file.size
-    response['Content-Disposition'] = 'attachment; filename={}.tar.gz'.format(filename)
+    response['Content-Disposition'] = 'attachment; filename={}.tar.gz'.format(
+        filename)
     return response
 
 
@@ -968,11 +1049,13 @@ def pipeline_data_view(request, pipeline_id):
     pipeline_data = PipelineData.objects.get(pk=pipeline_id)
     task_name = PipelineTaskType.TYPE_NAMES[pipeline_data.task_type]
     data = JSONUtil.loads(pipeline_data.data)
-    context = {"id": pipeline_id,
-               "workload": pipeline_data.workload,
-               "creation_time": pipeline_data.creation_time,
-               "task_name": task_name,
-               "data": data}
+    context = {
+        "id": pipeline_id,
+        "workload": pipeline_data.workload,
+        "creation_time": pipeline_data.creation_time,
+        "task_name": task_name,
+        "data": data
+    }
     return render(request, "pipeline_data.html", context)
 
 
@@ -983,7 +1066,8 @@ def tuner_status_view(request, project_id, session_id, result_id):  # pylint: di
     task_ids = TaskUtil.get_task_ids_from_tuple(task_tuple)
     tasks = TaskUtil.get_tasks(task_ids)
 
-    overall_status, num_completed = TaskUtil.get_task_status(tasks, len(task_ids))
+    overall_status, num_completed = TaskUtil.get_task_status(
+        tasks, len(task_ids))
     if overall_status in ['PENDING', 'RECEIVED', 'STARTED', 'UNAVAILABLE']:
         completion_time = 'N/A'
         total_runtime = 'N/A'
@@ -994,13 +1078,15 @@ def tuner_status_view(request, project_id, session_id, result_id):  # pylint: di
 
     task_info = list(zip(TaskType.TYPE_NAMES.values(), tasks))
 
-    context = {"id": result_id,
-               "result": res,
-               "overall_status": overall_status,
-               "num_completed": "{} / {}".format(num_completed, 3),
-               "completion_time": completion_time,
-               "total_runtime": total_runtime,
-               "tasks": task_info}
+    context = {
+        "id": result_id,
+        "result": res,
+        "overall_status": overall_status,
+        "num_completed": "{} / {}".format(num_completed, 3),
+        "completion_time": completion_time,
+        "total_runtime": total_runtime,
+        "tasks": task_info
+    }
 
     return render(request, "task_status.html", context)
 
@@ -1023,7 +1109,9 @@ def get_workload_data(request):
 
     results = Result.objects.filter(workload=workload)
     result_data = {r.pk: JSONUtil.loads(r.metric_data.data) for r in results}
-    results = sorted(results, key=lambda x: int(result_data[x.pk][session.target_objective]))
+    results = sorted(
+        results,
+        key=lambda x: int(result_data[x.pk][session.target_objective]))
 
     default_metrics = [session.target_objective]
     metrics = request.GET.get('met', ','.join(default_metrics)).split(',')
@@ -1031,37 +1119,38 @@ def get_workload_data(request):
     if len(metrics) == 0:
         metrics = default_metrics
 
-    data_package = {'results': [],
-                    'error': 'None',
-                    'metrics': metrics}
-    metric_meta = target_objectives.get_metric_metadata(session.dbms.pk, session.target_objective)
+    data_package = {'results': [], 'error': 'None', 'metrics': metrics}
+    metric_meta = target_objectives.get_metric_metadata(
+        session.dbms.pk, session.target_objective)
     for met in data_package['metrics']:
         met_info = metric_meta[met]
-        data_package['results'].append({'data': [[]], 'tick': [],
-                                        'unit': met_info.unit,
-                                        'lessisbetter': met_info.improvement,
-                                        'metric': met_info.pprint})
+        data_package['results'].append({
+            'data': [[]],
+            'tick': [],
+            'unit': met_info.unit,
+            'lessisbetter': met_info.improvement,
+            'metric': met_info.pprint
+        })
 
         added = set()
         knob_confs = data['conf'].split(',')
         i = len(knob_confs)
         for r in results:
             metric_data = JSONUtil.loads(r.metric_data.data)
-            if r.knob_data.pk in added or str(r.knob_data.pk) not in knob_confs:
+            if r.knob_data.pk in added or str(
+                    r.knob_data.pk) not in knob_confs:
                 continue
             added.add(r.knob_data.pk)
             data_val = metric_data[met] * met_info.scale
-            data_package['results'][-1]['data'][0].append([
-                i,
-                data_val,
-                r.pk,
-                data_val])
+            data_package['results'][-1]['data'][0].append(
+                [i, data_val, r.pk, data_val])
             data_package['results'][-1]['tick'].append(r.knob_data.name)
             i -= 1
         data_package['results'][-1]['data'].reverse()
         data_package['results'][-1]['tick'].reverse()
 
-    return HttpResponse(JSONUtil.dumps(data_package), content_type='application/json')
+    return HttpResponse(JSONUtil.dumps(data_package),
+                        content_type='application/json')
 
 
 # Data Format:
@@ -1091,10 +1180,12 @@ def get_timeline_data(request):
 
     session = get_object_or_404(Session, pk=request.GET['session'])
     if session.user != request.user:
-        return HttpResponse(JSONUtil.dumps(data_package), content_type='application/json')
+        return HttpResponse(JSONUtil.dumps(data_package),
+                            content_type='application/json')
 
     default_metrics = [session.target_objective]
-    metric_meta = target_objectives.get_metric_metadata(session.dbms.pk, session.target_objective)
+    metric_meta = target_objectives.get_metric_metadata(
+        session.dbms.pk, session.target_objective)
     for met in default_metrics:
         met_info = metric_meta[met]
         columnnames.append(met_info.pprint + ' (' + met_info.short_unit + ')')
@@ -1117,7 +1208,9 @@ def get_timeline_data(request):
         if len(metrics) == 0:
             metrics = default_metrics
         workloads = [display_type]
-        workload_confs = [wc for wc in request.GET['spe'].strip().split(',') if wc != '']
+        workload_confs = [
+            wc for wc in request.GET['spe'].strip().split(',') if wc != ''
+        ]
         results = [r for r in results if str(r.workload.pk) in workload_confs]
 
     metric_datas = {r.pk: JSONUtil.loads(r.metric_data.data) for r in results}
@@ -1125,18 +1218,14 @@ def get_timeline_data(request):
     for res in results:
         entry = [
             res.pk,
-            res.observation_end_time.astimezone(timezone(TIME_ZONE)).strftime("%Y-%m-%d %H:%M:%S"),
-            res.knob_data.name,
-            res.metric_data.name,
-            res.workload.name]
+            res.observation_end_time.astimezone(
+                timezone(TIME_ZONE)).strftime("%Y-%m-%d %H:%M:%S"),
+            res.knob_data.name, res.metric_data.name, res.workload.name
+        ]
         for met in metrics:
             entry.append(metric_datas[res.pk][met] * metric_meta[met].scale)
-        entry.extend([
-            '',
-            res.knob_data.pk,
-            res.metric_data.pk,
-            res.workload.pk
-        ])
+        entry.extend(
+            ['', res.knob_data.pk, res.metric_data.pk, res.workload.pk])
         result_list.append(entry)
     data_package['results'] = result_list
 
@@ -1165,10 +1254,9 @@ def get_timeline_data(request):
                 for res in d_r:
                     metric_data = JSONUtil.loads(res.metric_data.data)
                     out.append([
-                        res.observation_end_time.astimezone(timezone(TIME_ZONE)).
-                        strftime("%m-%d-%y %H:%M"),
-                        metric_data[metric] * met_info.scale,
-                        "",
+                        res.observation_end_time.astimezone(
+                            timezone(TIME_ZONE)).strftime("%m-%d-%y %H:%M"),
+                        metric_data[metric] * met_info.scale, "",
                         str(res.pk)
                     ])
 
@@ -1184,21 +1272,24 @@ def get_timeline_data(request):
     LOG.debug("Knobs plotted: %s", str(knobs))
     for knob in knobs:
         data = {
-            'units': KnobUnitType.TYPE_NAMES[KnobCatalog.objects.filter(name=knob)[0].unit],
+            'units':
+            KnobUnitType.TYPE_NAMES[KnobCatalog.objects.filter(
+                name=knob)[0].unit],
             'data': [],
-            'knob': knob,
+            'knob':
+            knob,
         }
         for res in results:
             knob_data = JSONUtil.loads(res.knob_data.data)
             data['data'].append([
-                res.observation_end_time.astimezone(timezone(TIME_ZONE)).
-                strftime("%m-%d-%y %H:%M"),
-                knob_data[knob],
-                "",
+                res.observation_end_time.astimezone(
+                    timezone(TIME_ZONE)).strftime("%m-%d-%y %H:%M"),
+                knob_data[knob], "",
                 str(res.pk)
             ])
         data_package['knobtimelines'].append(data)
-    return HttpResponse(JSONUtil.dumps(data_package), content_type='application/json')
+    return HttpResponse(JSONUtil.dumps(data_package),
+                        content_type='application/json')
 
 
 # get the lastest result
@@ -1209,7 +1300,8 @@ def give_result(request, upload_code):  # pylint: disable=unused-argument
         LOG.warning("Invalid upload code: %s", upload_code)
         return HttpResponse("Invalid upload code: " + upload_code, status=400)
 
-    latest_result = Result.objects.filter(session=session).latest('creation_time')
+    latest_result = Result.objects.filter(
+        session=session).latest('creation_time')
     task_tuple = JSONUtil.loads(latest_result.task_ids)
     task_res = celery.result.result_from_tuple(task_tuple)
 
@@ -1222,27 +1314,32 @@ def give_result(request, upload_code):  # pylint: disable=unused-argument
     group_res = celery.result.GroupResult(task_res.task_id, results=task_list)
     next_config = latest_result.next_configuration
 
-    LOG.debug("result_id: %s, succeeded: %s, failed: %s, ready: %s, tasks_completed: %s/%s, "
-              "next_config: %s\n", latest_result.pk, group_res.successful(),
-              group_res.failed(), group_res.ready(), group_res.completed_count(),
-              len(group_res), next_config)
+    LOG.debug(
+        "result_id: %s, succeeded: %s, failed: %s, ready: %s, tasks_completed: %s/%s, "
+        "next_config: %s\n", latest_result.pk, group_res.successful(),
+        group_res.failed(), group_res.ready(), group_res.completed_count(),
+        len(group_res), next_config)
 
-    response = dict(celery_status='', result_id=latest_result.pk, message='', errors=[])
+    response = dict(celery_status='',
+                    result_id=latest_result.pk,
+                    message='',
+                    errors=[])
 
     if group_res.failed():
         errors = [t.traceback for t in task_list if t.traceback]
         if errors:
             LOG.warning('\n\n'.join(errors))
-        response.update(
-            celery_status='FAILURE', errors=errors,
-            message='Celery failed to get the next configuration')
+        response.update(celery_status='FAILURE',
+                        errors=errors,
+                        message='Celery failed to get the next configuration')
         status_code = 400
 
     elif group_res.ready():
         assert group_res.successful()
         next_config = JSONUtil.loads(latest_result.next_configuration)
         response.update(
-            next_config, celery_status='SUCCESS',
+            next_config,
+            celery_status='SUCCESS',
             message='Celery successfully recommended the next configuration')
         status_code = 200
 
@@ -1250,10 +1347,12 @@ def give_result(request, upload_code):  # pylint: disable=unused-argument
         celery_status = 'PENDING'
         if CHECK_CELERY:
             celery_status = utils.check_and_run_celery()
-        response.update(celery_status=celery_status, message='Result not ready')
+        response.update(celery_status=celery_status,
+                        message='Result not ready')
         status_code = 202
 
-    return HttpResponse(JSONUtil.dumps(response, pprint=True), status=status_code,
+    return HttpResponse(JSONUtil.dumps(response, pprint=True),
+                        status=status_code,
                         content_type='application/json')
 
 
@@ -1270,7 +1369,8 @@ def get_debug_info(request, upload_code):  # pylint: disable=unused-argument
     file = ContentFile(content.getvalue())
     response = HttpResponse(file, content_type='application/x-gzip')
     response['Content-Length'] = file.size
-    response['Content-Disposition'] = 'attachment; filename={}.tar.gz'.format(filename)
+    response['Content-Disposition'] = 'attachment; filename={}.tar.gz'.format(
+        filename)
     return response
 
 
@@ -1297,16 +1397,18 @@ def alt_get_info(request, name):  # pylint: disable=unused-argument
                 base_dir = 'website_log'
                 base_name = os.path.join(tmpdir, base_dir)
                 shutil.copytree(LOG_DIR, base_name)
-                filepath = shutil.make_archive(
-                    base_name, 'gztar', tmpdir, base_dir)
+                filepath = shutil.make_archive(base_name, 'gztar', tmpdir,
+                                               base_dir)
 
             f = open(filepath, 'rb')
             try:
                 cfile = File(f)
-                response = HttpResponse(cfile, content_type='application/x-gzip')
+                response = HttpResponse(cfile,
+                                        content_type='application/x-gzip')
                 response['Content-Length'] = cfile.size
-                response['Content-Disposition'] = 'attachment; filename={}'.format(
-                    os.path.basename(filepath))
+                response[
+                    'Content-Disposition'] = 'attachment; filename={}'.format(
+                        os.path.basename(filepath))
             finally:
                 f.close()
         finally:
@@ -1325,11 +1427,13 @@ def alt_get_info(request, name):  # pylint: disable=unused-argument
             info['hostname'] = socket.gethostname()
             info['git_commit_hash'] = utils.git_hash()
             msg = "Successfully retrieved info for '{}'.".format(name)
-        elif name in app_models.__dict__ and hasattr(app_models.__dict__[name], 'objects'):
+        elif name in app_models.__dict__ and hasattr(app_models.__dict__[name],
+                                                     'objects'):
             data = {k: v[0] for k, v in request.POST.lists()}
             require_exists = data.pop('require_exists', False)
             obj_str = '{}({})'.format(
-                name, ','.join('{}={}'.format(*o) for o in sorted(data.items())))
+                name,
+                ','.join('{}={}'.format(*o) for o in sorted(data.items())))
             try:
                 obj = app_models.__dict__[name].objects.filter(**data).first()
                 if obj is None:
@@ -1339,9 +1443,11 @@ def alt_get_info(request, name):  # pylint: disable=unused-argument
                     status_code = 400 if require_exists else 200
                 else:
                     info = model_to_dict(obj)
-                    msg = "Successfully retrieved info for object {}.".format(obj_str)
+                    msg = "Successfully retrieved info for object {}.".format(
+                        obj_str)
             except FieldError as e:
-                msg = "Failed to get object {}: invalid field.\n\n{}\n\n".format(obj_str, e)
+                msg = "Failed to get object {}: invalid field.\n\n{}\n\n".format(
+                    obj_str, e)
                 LOG.warning(msg)
                 msg = 'ERROR: ' + msg
                 status_code = 400
@@ -1352,30 +1458,41 @@ def alt_get_info(request, name):  # pylint: disable=unused-argument
             status_code = 400
 
         content = dict(message=msg, info=info, name=name)
-        response = HttpResponse(JSONUtil.dumps(content), content_type='application/json',
+        response = HttpResponse(JSONUtil.dumps(content),
+                                content_type='application/json',
                                 status=status_code)
 
     return response
 
 
-def _alt_checker(request, response, required_data=None, authenticate_user=False):
+def _alt_checker(request,
+                 response,
+                 required_data=None,
+                 authenticate_user=False):
     required_data = required_data or ()
     data = {k: v[0] for k, v in request.POST.lists()}
 
     missing = [k for k in required_data if k not in data]
     if missing:
-        err_msg = "Request is missing required data: {}".format(', '.join(missing))
+        err_msg = "Request is missing required data: {}".format(
+            ', '.join(missing))
         response['message'] = 'ERROR: ' + err_msg
         LOG.warning(err_msg)
-        return HttpResponse(JSONUtil.dumps(response), content_type='application/json', status=400)
+        return HttpResponse(JSONUtil.dumps(response),
+                            content_type='application/json',
+                            status=400)
 
     if authenticate_user:
-        user = authenticate(User, username=data['username'], password=data['password'])
+        user = authenticate(User,
+                            username=data['username'],
+                            password=data['password'])
         if not user:
-            err_msg = "Unable to authenticate user '{}'.".format(data['username'])
+            err_msg = "Unable to authenticate user '{}'.".format(
+                data['username'])
             LOG.warning(err_msg)
             response.update(message='ERROR: ' + err_msg)
-            return HttpResponse(JSONUtil.dumps(response), content_type='application/json',
+            return HttpResponse(JSONUtil.dumps(response),
+                                content_type='application/json',
                                 status=400)
         data['user'] = user
 
@@ -1385,7 +1502,9 @@ def _alt_checker(request, response, required_data=None, authenticate_user=False)
 @csrf_exempt
 def alt_create_user(request):
     response = dict(created=False, message=None, user=None)
-    res = _alt_checker(request, response, required_data=('username', 'password'))
+    res = _alt_checker(request,
+                       response,
+                       required_data=('username', 'password'))
     if isinstance(res, HttpResponse):
         return res
 
@@ -1400,13 +1519,15 @@ def alt_create_user(request):
         msg = 'WARNING: ' + msg
 
     response.update(user=model_to_dict(user), created=created, message=msg)
-    return HttpResponse(JSONUtil.dumps(response), content_type='application/json', status=200)
+    return HttpResponse(JSONUtil.dumps(response),
+                        content_type='application/json',
+                        status=200)
 
 
 @csrf_exempt
 def alt_delete_user(request):
     response = dict(deleted=False, message=None, delete_info=None)
-    res = _alt_checker(request, response, required_data=('username',))
+    res = _alt_checker(request, response, required_data=('username', ))
     if isinstance(res, HttpResponse):
         return res
 
@@ -1421,13 +1542,17 @@ def alt_delete_user(request):
         msg = 'WARNING: ' + msg
 
     response.update(message=msg, deleted=deleted, delete_info=delete_info)
-    return HttpResponse(JSONUtil.dumps(response), content_type='application/json', status=200)
+    return HttpResponse(JSONUtil.dumps(response),
+                        content_type='application/json',
+                        status=200)
 
 
 @csrf_exempt
 def alt_create_or_edit_project(request):
     response = dict(created=False, updated=False, message=None, project=None)
-    res = _alt_checker(request, response, required_data=('username', 'password', 'name'),
+    res = _alt_checker(request,
+                       response,
+                       required_data=('username', 'password', 'name'),
                        authenticate_user=True)
     if isinstance(res, HttpResponse):
         return res
@@ -1444,8 +1569,9 @@ def alt_create_or_edit_project(request):
 
     if request.path == reverse('backdoor_create_project'):
         defaults = dict(creation_time=ts, last_update=ts, **data)
-        project, created = Project.objects.get_or_create(
-            user=user, name=project_name, defaults=defaults)
+        project, created = Project.objects.get_or_create(user=user,
+                                                         name=project_name,
+                                                         defaults=defaults)
 
         if created:
             msg = "Successfully created project '{}'.".format(project_name)
@@ -1462,8 +1588,13 @@ def alt_create_or_edit_project(request):
         msg = "Successfully updated project '{}'".format(project_name)
         updated = True
 
-    response.update(message=msg, project=model_to_dict(project), created=created, updated=updated)
-    return HttpResponse(JSONUtil.dumps(response), content_type='application/json', status=200)
+    response.update(message=msg,
+                    project=model_to_dict(project),
+                    created=created,
+                    updated=updated)
+    return HttpResponse(JSONUtil.dumps(response),
+                        content_type='application/json',
+                        status=200)
 
 
 @csrf_exempt
@@ -1472,8 +1603,8 @@ def alt_create_or_edit_session(request):
     authenticate_user = True
 
     if request.path == reverse('backdoor_create_session'):
-        required_data = (
-            'username', 'password', 'project_name', 'name', 'dbms_type', 'dbms_version')
+        required_data = ('username', 'password', 'project_name', 'name',
+                         'dbms_type', 'dbms_version')
     else:
         if 'upload_code' in request.POST:
             required_data = ()
@@ -1481,7 +1612,9 @@ def alt_create_or_edit_session(request):
         else:
             required_data = ('username', 'password', 'project_name', 'name')
 
-    res = _alt_checker(request, response, required_data=required_data,
+    res = _alt_checker(request,
+                       response,
+                       required_data=required_data,
                        authenticate_user=authenticate_user)
     if isinstance(res, HttpResponse):
         return res
@@ -1514,14 +1647,19 @@ def alt_create_or_edit_session(request):
         project = get_object_or_404(Project, name=project_name, user=user)
         dbms_type = DBMSType.type(data.pop('dbms_type'))
         dbms_version = data.pop('dbms_version')
-        defaults['dbms'] = get_object_or_404(DBMSCatalog, type=dbms_type, version=dbms_version)
+        defaults['dbms'] = get_object_or_404(DBMSCatalog,
+                                             type=dbms_type,
+                                             version=dbms_version)
         hardware, _ = Hardware.objects.get_or_create(pk=1)
         defaults['hardware'] = hardware
-        defaults['upload_code'] = data.pop('upload_code', None) or MediaUtil.upload_code_generator()
+        defaults['upload_code'] = data.pop(
+            'upload_code', None) or MediaUtil.upload_code_generator()
         defaults.update(creation_time=ts, last_update=ts, **data)
 
-        session, created = Session.objects.get_or_create(user=user, project=project,
-                                                         name=session_name, defaults=defaults)
+        session, created = Session.objects.get_or_create(user=user,
+                                                         project=project,
+                                                         name=session_name,
+                                                         defaults=defaults)
 
         if created:
             msg = "Successfully created session '{}'.".format(session_name)
@@ -1532,10 +1670,14 @@ def alt_create_or_edit_session(request):
             msg = 'WARNING: ' + msg
     else:
         if 'upload_code' in data:
-            session = get_object_or_404(Session, upload_code=data['upload_code'])
+            session = get_object_or_404(Session,
+                                        upload_code=data['upload_code'])
         else:
             project = get_object_or_404(Project, name=project_name, user=user)
-            session = get_object_or_404(Session, name=session_name, project=project, user=user)
+            session = get_object_or_404(Session,
+                                        name=session_name,
+                                        project=project,
+                                        user=user)
 
         for k, v in data.items():
             setattr(session, k, v)
@@ -1568,7 +1710,8 @@ def alt_create_or_edit_session(request):
                     invalid.append('{}={}'.format(k, v))
             session.save()
             if invalid:
-                warn_msg = "Ignored invalid hyperparameters: {}".format(', '.join(invalid))
+                warn_msg = "Ignored invalid hyperparameters: {}".format(
+                    ', '.join(invalid))
                 LOG.warning(warn_msg)
                 warnings.append("WARNING: " + warn_msg)
 
@@ -1582,14 +1725,19 @@ def alt_create_or_edit_session(request):
     sk = SessionKnob.objects.get_knobs_for_session(session)
     sess_knobs = {}
     for knob in sk:
-        sess_knobs[knob['name']] = {x: knob[x] for x in ('minval', 'maxval', 'tunable')}
+        sess_knobs[knob['name']] = {
+            x: knob[x]
+            for x in ('minval', 'maxval', 'tunable')
+        }
     res['session_knobs'] = sess_knobs
 
     if warnings:
         msg = '\n\n'.join(warnings + [msg])
 
     response.update(message=msg, session=res, created=created, updated=updated)
-    return HttpResponse(JSONUtil.dumps(response), content_type='application/json', status=200)
+    return HttpResponse(JSONUtil.dumps(response),
+                        content_type='application/json',
+                        status=200)
 
 
 # integration test
@@ -1615,31 +1763,55 @@ def create_test_website(request):  # pylint: disable=unused-argument
 
     test_user = User.objects.create_user(username='ottertune_test_user',
                                          password='ottertune_test_user')
-    test_project = Project.objects.create(user=test_user, name='ottertune_test_project',
-                                          creation_time=now(), last_update=now())
+    test_project = Project.objects.create(user=test_user,
+                                          name='ottertune_test_project',
+                                          creation_time=now(),
+                                          last_update=now())
 
     # create no tuning session
-    s1 = Session.objects.create(name='test_session_no_tuning', tuning_session='no_tuning_session',
-                                dbms_id=1, hardware=test_hardware, project=test_project,
-                                creation_time=now(), last_update=now(), user=test_user,
+    s1 = Session.objects.create(name='test_session_no_tuning',
+                                tuning_session='no_tuning_session',
+                                dbms_id=1,
+                                hardware=test_hardware,
+                                project=test_project,
+                                creation_time=now(),
+                                last_update=now(),
+                                user=test_user,
                                 upload_code='ottertuneTestNoTuning')
     set_default_knobs(s1)
     # create gpr session
-    s2 = Session.objects.create(name='test_session_gpr', tuning_session='tuning_session',
-                                dbms_id=1, hardware=test_hardware, project=test_project,
-                                creation_time=now(), last_update=now(), algorithm=AlgorithmType.GPR,
-                                upload_code='ottertuneTestTuningGPR', user=test_user)
+    s2 = Session.objects.create(name='test_session_gpr',
+                                tuning_session='tuning_session',
+                                dbms_id=1,
+                                hardware=test_hardware,
+                                project=test_project,
+                                creation_time=now(),
+                                last_update=now(),
+                                algorithm=AlgorithmType.GPR,
+                                upload_code='ottertuneTestTuningGPR',
+                                user=test_user)
     set_default_knobs(s2)
     # create dnn session
-    s3 = Session.objects.create(name='test_session_dnn', tuning_session='tuning_session',
-                                dbms_id=1, hardware=test_hardware, project=test_project,
-                                creation_time=now(), last_update=now(), algorithm=AlgorithmType.DNN,
-                                upload_code='ottertuneTestTuningDNN', user=test_user)
+    s3 = Session.objects.create(name='test_session_dnn',
+                                tuning_session='tuning_session',
+                                dbms_id=1,
+                                hardware=test_hardware,
+                                project=test_project,
+                                creation_time=now(),
+                                last_update=now(),
+                                algorithm=AlgorithmType.DNN,
+                                upload_code='ottertuneTestTuningDNN',
+                                user=test_user)
     set_default_knobs(s3)
     # create ddpg session
-    s4 = Session.objects.create(name='test_session_ddpg', tuning_session='tuning_session',
-                                dbms_id=1, hardware=test_hardware, project=test_project,
-                                creation_time=now(), last_update=now(), user=test_user,
+    s4 = Session.objects.create(name='test_session_ddpg',
+                                tuning_session='tuning_session',
+                                dbms_id=1,
+                                hardware=test_hardware,
+                                project=test_project,
+                                creation_time=now(),
+                                last_update=now(),
+                                user=test_user,
                                 upload_code='ottertuneTestTuningDDPG',
                                 algorithm=AlgorithmType.DDPG)
     set_default_knobs(s4)

@@ -149,6 +149,7 @@ class DataUtil(object):
 
     @staticmethod
     def aggregate_data(results):
+        #将这knobs和metrics两项结合起来，存成一个dict
         knob_labels = list(JSONUtil.loads(results[0].knob_data.data).keys())
         metric_labels = list(
             JSONUtil.loads(results[0].metric_data.data).keys())

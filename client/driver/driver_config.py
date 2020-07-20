@@ -151,9 +151,9 @@ LOG_LEVEL = 'DEBUG'
 LOG_DIR = os.path.join(DRIVER_HOME, 'log')
 
 # Log files
-DRIVER_LOG = os.path.join(LOG_DIR, 'driver.log')
-OLTPBENCH_LOG = os.path.join(LOG_DIR, 'oltpbench.log')
-CONTROLLER_LOG = os.path.join(LOG_DIR, 'controller.log')
+DRIVER_LOG = os.path.join(DRIVER_HOME, 'driver.log')
+OLTPBENCH_LOG = os.path.join(DRIVER_HOME, 'oltpbench.log')
+CONTROLLER_LOG = os.path.join(DRIVER_HOME, 'controller.log')
 
 # ==========================================================
 #  WEBSITE OPTIONS
@@ -164,4 +164,13 @@ CONTROLLER_LOG = os.path.join(LOG_DIR, 'controller.log')
 WEBSITE_URL = 'http://192.168.122.1:8001'
 
 # Code for uploading new results to the website
-UPLOAD_CODE = 'YGSJXRGL6FQKETSJT3CR'
+UPLOAD_CODE = 'J687GUPDDPCSPE5BXEIH'
+
+#threshold of convergence
+THRESHOLD = 0.015
+
+# threshold times
+SMOOTH_COUNT = 3
+
+# base iterations
+BASE_ITERATION_NUM = 20

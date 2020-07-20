@@ -22,12 +22,14 @@ class SumTree(object):
         self.data = np.zeros(capacity, dtype=object)
         self.num_entries = 0
 
+    # 该节点的父节点值都增加change
     def _propagate(self, idx, change):
         parent = (idx - 1) // 2
         self.tree[parent] += change
         if parent != 0:
             self._propagate(parent, change)
 
+    # 查找子节点在s，附近的idx值
     def _retrieve(self, idx, s):
         left = 2 * idx + 1
         right = left + 1
@@ -68,7 +70,6 @@ class SumTree(object):
 
 
 class PrioritizedReplayMemory(object):
-
     def __init__(self, capacity):
         self.tree = SumTree(capacity)
         self.capacity = capacity
@@ -78,7 +79,7 @@ class PrioritizedReplayMemory(object):
         self.beta_increment_per_sampling = 0.001
 
     def _get_priority(self, error):
-        return (error + self.e) ** self.a
+        return (error + self.e)**self.a
 
     def add(self, error, sample):
         # (s, a, r, s, t)
@@ -99,7 +100,6 @@ class PrioritizedReplayMemory(object):
         for i in range(n):
             a = segment * i
             b = segment * (i + 1)
-
             s = random.uniform(a, b)
             (idx, p, data) = self.tree.get(s)
             priorities.append(p)
