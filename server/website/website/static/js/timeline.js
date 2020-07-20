@@ -36,7 +36,8 @@ function renderPlot(data, div_id) {
         yaxis:{
             label: data.units,
             labelRenderer: $.jqplot.CanvasAxisLabelRenderer,
-            min: 0,
+            // min: 0,
+            //min: -20,
             autoscale: true,
         },
         xaxis:{
@@ -74,7 +75,8 @@ function renderKnobPlot(data, div_id) {
         yaxis:{
             label: data.units,
             labelRenderer: $.jqplot.CanvasAxisLabelRenderer,
-            min: 0,
+            // min: 0,
+            //min: -20,
             autoscale: true,
         },
         xaxis:{
@@ -114,7 +116,9 @@ function renderMiniplot(plotid, data) {
         series: series,
         axes: {
         yaxis: {
-            min: 0, autoscale:true, showTicks: false
+            // min: 0,
+             //min: -20,
+             autoscale:true, showTicks: false
         },
         xaxis: {
             renderer:$.jqplot.DateAxisRenderer,

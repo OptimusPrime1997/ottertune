@@ -8,6 +8,8 @@ Common Django settings for the OtterTune project.
 
 """
 
+from .constants import *  # pycodestyle: disable=E402
+from .credentials import *  # pycodestyle: disable=E402
 import os
 from os.path import abspath, dirname, exists, join
 import sys
@@ -338,6 +340,4 @@ SESSION_SERIALIZER = 'django.contrib.sessions.serializers.JSONSerializer'
 
 # Import and override defaults with custom configuration options
 # pylint: disable=wildcard-import,wrong-import-position,unused-wildcard-import
-from .credentials import *  # pycodestyle: disable=E402
-from .constants import *  # pycodestyle: disable=E402
 # pylint: enable=wildcard-import,wrong-import-position,unused-wildcard-import

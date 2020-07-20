@@ -19,25 +19,27 @@ LOG = get_analysis_logger(__name__)
 
 
 class GPRResult(object):
-
     def __init__(self, ypreds=None, sigmas=None):
         self.ypreds = ypreds
         self.sigmas = sigmas
 
 
 class GPRGDResult(GPRResult):
-
-    def __init__(self, ypreds=None, sigmas=None,
-                 minl=None, minl_conf=None):
+    def __init__(self, ypreds=None, sigmas=None, minl=None, minl_conf=None):
         super(GPRGDResult, self).__init__(ypreds, sigmas)
         self.minl = minl
         self.minl_conf = minl_conf
 
 
 class GPR(object):
-
-    def __init__(self, length_scale=1.0, magnitude=1.0, max_train_size=7000,
-                 batch_size=3000, num_threads=4, check_numerics=True, debug=False):
+    def __init__(self,
+                 length_scale=1.0,
+                 magnitude=1.0,
+                 max_train_size=7000,
+                 batch_size=3000,
+                 num_threads=4,
+                 check_numerics=True,
+                 debug=False):
         assert np.isscalar(length_scale)
         assert np.isscalar(magnitude)
         assert length_scale > 0 and magnitude > 0
@@ -72,7 +74,8 @@ class GPR(object):
             # Nodes for distance computation
             v1 = tf.placeholder(tf.float32, name="v1")
             v2 = tf.placeholder(tf.float32, name="v2")
-            dist_op = tf.sqrt(tf.reduce_sum(tf.pow(tf.subtract(v1, v2), 2), 1), name='dist_op')
+            dist_op = tf.sqrt(tf.reduce_sum(tf.pow(tf.subtract(v1, v2), 2), 1),
+                              name='dist_op')
             if self.check_numerics:
                 dist_op = tf.check_numerics(dist_op, "dist_op: ")
 
@@ -157,16 +160,20 @@ class GPR(object):
         from sklearn.utils.validation import check_X_y
 
         if X.shape[0] > self.max_train_size_:
-            raise Exception("X_train size cannot exceed {} ({})"
-                            .format(self.max_train_size_, X.shape[0]))
-        return check_X_y(X, y, multi_output=True,
-                         allow_nd=True, y_numeric=True,
+            raise Exception("X_train size cannot exceed {} ({})".format(
+                self.max_train_size_, X.shape[0]))
+        return check_X_y(X,
+                         y,
+                         multi_output=True,
+                         allow_nd=True,
+                         y_numeric=True,
                          estimator="GPR")
 
     def check_fitted(self):
         if self.X_train is None or self.y_train is None \
                 or self.xy_ is None or self.K is None:
-            raise Exception("The model must be trained before making predictions!")
+            raise Exception(
+                "The model must be trained before making predictions!")
 
     @staticmethod
     def check_array(X):
@@ -177,8 +184,8 @@ class GPR(object):
     def check_output(X):
         finite_els = np.isfinite(X)
         if not np.all(finite_els):
-            raise Exception("Input contains non-finite values: {}"
-                            .format(X[~finite_els]))
+            raise Exception("Input contains non-finite values: {}".format(
+                X[~finite_els]))
 
     def fit(self, X_train, y_train, ridge=1.0):
         self._reset()
@@ -193,19 +200,35 @@ class GPR(object):
         assert ridge.ndim == 1
 
         X_dists = np.zeros((sample_size, sample_size), dtype=np.float32)
-        with tf.Session(graph=self.graph,
-                        config=tf.ConfigProto(
-                            intra_op_parallelism_threads=self.num_threads_)) as sess:
+        with tf.Session(
+                graph=self.graph,
+                config=tf.ConfigProto(
+                    device_count={"CPU":
+                                  20},  # limit to num_cpu_core CPU usage
+                    intra_op_parallelism_threads=self.num_threads_,
+                    inter_op_parallelism_threads=self.num_threads_)) as sess:
+            # with tf.Session(
+            # graph=self.graph,
+            # config=tf.ConfigProto(
+            #     intra_op_parallelism_threads=self.num_threads_)) as sess:
             dist_op = self.ops['dist_op']
             v1, v2 = self.vars['v1_h'], self.vars['v2_h']
             for i in range(sample_size):
-                X_dists[i] = sess.run(dist_op, feed_dict={v1: self.X_train[i], v2: self.X_train})
+                X_dists[i] = sess.run(dist_op,
+                                      feed_dict={
+                                          v1: self.X_train[i],
+                                          v2: self.X_train
+                                      })
 
             K_ridge_op = self.ops['K_ridge_op']
             X_dists_ph = self.vars['X_dists_h']
             ridge_ph = self.vars['ridge_h']
 
-            self.K = sess.run(K_ridge_op, feed_dict={X_dists_ph: X_dists, ridge_ph: ridge})
+            self.K = sess.run(K_ridge_op,
+                              feed_dict={
+                                  X_dists_ph: X_dists,
+                                  ridge_ph: ridge
+                              })
 
             K_ph = self.vars['K_h']
 
@@ -215,8 +238,11 @@ class GPR(object):
             xy_op = self.ops['xy_op']
             K_inv_ph = self.vars['K_inv_h']
             yt_ph = self.vars['yt_h']
-            self.xy_ = sess.run(xy_op, feed_dict={K_inv_ph: self.K_inv,
-                                                  yt_ph: self.y_train})
+            self.xy_ = sess.run(xy_op,
+                                feed_dict={
+                                    K_inv_ph: self.K_inv,
+                                    yt_ph: self.y_train
+                                })
         return self
 
     def predict(self, X_test):
@@ -228,9 +254,17 @@ class GPR(object):
         arr_offset = 0
         yhats = np.zeros([test_size, 1])
         sigmas = np.zeros([test_size, 1])
-        with tf.Session(graph=self.graph,
-                        config=tf.ConfigProto(
-                            intra_op_parallelism_threads=self.num_threads_)) as sess:
+        # with tf.Session(
+        #         graph=self.graph,
+        #         config=tf.ConfigProto(
+        #             intra_op_parallelism_threads=self.num_threads_)) as sess:
+        with tf.Session(
+                graph=self.graph,
+                config=tf.ConfigProto(
+                    device_count={"CPU":
+                                  20},  # limit to num_cpu_core CPU usage
+                    intra_op_parallelism_threads=self.num_threads_,
+                    inter_op_parallelism_threads=self.num_threads_)) as sess:
             # Nodes for distance operation
             dist_op = self.ops['dist_op']
             v1 = self.vars['v1_h']
@@ -258,35 +292,49 @@ class GPR(object):
 
                 dists1 = np.zeros([sample_size, batch_len])
                 for i in range(sample_size):
-                    dists1[i] = sess.run(dist_op, feed_dict={v1: self.X_train[i],
-                                                             v2: X_test_batch})
+                    dists1[i] = sess.run(dist_op,
+                                         feed_dict={
+                                             v1: self.X_train[i],
+                                             v2: X_test_batch
+                                         })
 
                 sig_val = self.ops['sig_op']
                 K2_ = sess.run(K_op, feed_dict={X_dists: dists1})
                 yhat = sess.run(yhat_, feed_dict={K2: K2_, xy_ph: self.xy_})
                 dists2 = np.zeros([batch_len, batch_len])
                 for i in range(batch_len):
-                    dists2[i] = sess.run(dist_op, feed_dict={v1: X_test_batch[i], v2: X_test_batch})
+                    dists2[i] = sess.run(dist_op,
+                                         feed_dict={
+                                             v1: X_test_batch[i],
+                                             v2: X_test_batch
+                                         })
                 K3_ = sess.run(K_op, feed_dict={X_dists: dists2})
 
                 sigma = np.zeros([1, batch_len], np.float32)
-                sigma[0] = sess.run(sig_val, feed_dict={K_inv_ph: self.K_inv, K2: K2_, K3: K3_})
+                sigma[0] = sess.run(sig_val,
+                                    feed_dict={
+                                        K_inv_ph: self.K_inv,
+                                        K2: K2_,
+                                        K3: K3_
+                                    })
                 sigma = np.transpose(sigma)
-                yhats[arr_offset: end_offset] = yhat
-                sigmas[arr_offset: end_offset] = sigma
+                yhats[arr_offset:end_offset] = yhat
+                sigmas[arr_offset:end_offset] = sigma
                 arr_offset = end_offset
         GPR.check_output(yhats)
         GPR.check_output(sigmas)
         return GPRResult(yhats, sigmas)
 
     def get_params(self, deep=True):
-        return {"length_scale": self.length_scale,
-                "magnitude": self.magnitude,
-                "X_train": self.X_train,
-                "y_train": self.y_train,
-                "xy_": self.xy_,
-                "K": self.K,
-                "K_inv": self.K_inv}
+        return {
+            "length_scale": self.length_scale,
+            "magnitude": self.magnitude,
+            "X_train": self.X_train,
+            "y_train": self.y_train,
+            "xy_": self.xy_,
+            "K": self.K,
+            "K_inv": self.K_inv
+        }
 
     def set_params(self, **parameters):
         for param, val in list(parameters.items()):
@@ -338,37 +386,54 @@ class GPRGD(GPR):
         self.X_min = X_min
         self.X_max = X_max
 
-        with tf.Session(graph=self.graph,
-                        config=tf.ConfigProto(
-                            intra_op_parallelism_threads=self.num_threads_)) as sess:
+        # with tf.Session(
+        #         graph=self.graph,
+        #         config=tf.ConfigProto(
+        #             intra_op_parallelism_threads=self.num_threads_)) as sess:
+        with tf.Session(
+                graph=self.graph,
+                config=tf.ConfigProto(
+                    device_count={"CPU":
+                                  20},  # limit to num_cpu_core CPU usage
+                    intra_op_parallelism_threads=self.num_threads_,
+                    inter_op_parallelism_threads=self.num_threads_)) as sess:
             xt_ = tf.Variable(self.X_train[0], tf.float32)
             xt_ph = tf.placeholder(tf.float32)
             xt_assign_op = xt_.assign(xt_ph)
             init = tf.global_variables_initializer()
             sess.run(init)
-            K2_mat = tf.transpose(tf.expand_dims(tf.sqrt(tf.reduce_sum(tf.pow(
-                tf.subtract(xt_, self.X_train), 2), 1)), 0))
+            K2_mat = tf.transpose(
+                tf.expand_dims(
+                    tf.sqrt(
+                        tf.reduce_sum(
+                            tf.pow(tf.subtract(xt_, self.X_train), 2), 1)), 0))
             if self.check_numerics is True:
                 K2_mat = tf.check_numerics(K2_mat, "K2_mat: ")
-            K2__ = tf.cast(self.magnitude * tf.exp(-K2_mat / self.length_scale), tf.float32)
+            K2__ = tf.cast(
+                self.magnitude * tf.exp(-K2_mat / self.length_scale),
+                tf.float32)
             if self.check_numerics is True:
                 K2__ = tf.check_numerics(K2__, "K2__: ")
-            yhat_gd = tf.cast(tf.matmul(tf.transpose(K2__), self.xy_), tf.float32)
+            yhat_gd = tf.cast(tf.matmul(tf.transpose(K2__), self.xy_),
+                              tf.float32)
             if self.check_numerics is True:
                 yhat_gd = tf.check_numerics(yhat_gd, message="yhat: ")
-            sig_val = tf.cast((tf.sqrt(self.magnitude - tf.matmul(
-                tf.transpose(K2__), tf.matmul(self.K_inv, K2__)))), tf.float32)
+            sig_val = tf.cast((tf.sqrt(
+                self.magnitude -
+                tf.matmul(tf.transpose(K2__), tf.matmul(self.K_inv, K2__)))),
+                              tf.float32)
             if self.check_numerics is True:
                 sig_val = tf.check_numerics(sig_val, message="sigma: ")
             LOG.debug("\nyhat_gd : %s", str(sess.run(yhat_gd)))
             LOG.debug("\nsig_val : %s", str(sess.run(sig_val)))
 
-            loss = tf.squeeze(tf.subtract(self.mu_multiplier * yhat_gd,
-                                          self.sigma_multiplier * sig_val))
+            loss = tf.squeeze(
+                tf.subtract(self.mu_multiplier * yhat_gd,
+                            self.sigma_multiplier * sig_val))
             if self.check_numerics is True:
                 loss = tf.check_numerics(loss, "loss: ")
-            optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate,
-                                               epsilon=self.epsilon)
+            optimizer = tf.train.AdamOptimizer(
+                learning_rate=self.learning_rate, epsilon=self.epsilon)
             # optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.learning_rate)
             train = optimizer.minimize(loss)
 
@@ -381,9 +446,12 @@ class GPRGD(GPR):
             self.ops['train_op'] = train
         return self
 
-    def predict(self, X_test, constraint_helper=None,  # pylint: disable=arguments-differ
-                categorical_feature_method='hillclimbing',
-                categorical_feature_steps=3):
+    def predict(
+            self,
+            X_test,
+            constraint_helper=None,  # pylint: disable=arguments-differ
+            categorical_feature_method='hillclimbing',
+            categorical_feature_steps=3):
         self.check_fitted()
         X_test = np.float32(GPR.check_array(X_test))
         test_size = X_test.shape[0]
@@ -395,9 +463,17 @@ class GPRGD(GPR):
         minls = np.zeros([test_size, 1])
         minl_confs = np.zeros([test_size, nfeats])
 
-        with tf.Session(graph=self.graph,
-                        config=tf.ConfigProto(
-                            intra_op_parallelism_threads=self.num_threads_)) as sess:
+        # with tf.Session(
+        #         graph=self.graph,
+        #         config=tf.ConfigProto(
+        #             intra_op_parallelism_threads=self.num_threads_)) as sess:
+        with tf.Session(
+                graph=self.graph,
+                config=tf.ConfigProto(
+                    device_count={"CPU":
+                                  20},  # limit to num_cpu_core CPU usage
+                    intra_op_parallelism_threads=self.num_threads_,
+                    inter_op_parallelism_threads=self.num_threads_)) as sess:
             while arr_offset < test_size:
                 if arr_offset + self.batch_size_ > test_size:
                     end_offset = test_size
@@ -426,9 +502,9 @@ class GPRGD(GPR):
                 for i in range(batch_len):
                     if self.debug is True:
                         LOG.info("-------------------------------------------")
-                    yhats_it = np.empty((self.max_iter + 1,)) * np.nan
-                    sigmas_it = np.empty((self.max_iter + 1,)) * np.nan
-                    losses_it = np.empty((self.max_iter + 1,)) * np.nan
+                    yhats_it = np.empty((self.max_iter + 1, )) * np.nan
+                    sigmas_it = np.empty((self.max_iter + 1, )) * np.nan
+                    losses_it = np.empty((self.max_iter + 1, )) * np.nan
                     confs_it = np.empty((self.max_iter + 1, nfeats)) * np.nan
 
                     sess.run(assign_op, feed_dict={xt_ph: X_test_batch[i]})
@@ -452,7 +528,8 @@ class GPRGD(GPR):
                         xt_valid = np.maximum(xt_valid, self.X_min)
                         sess.run(assign_op, feed_dict={xt_ph: xt_valid})
                         if constraint_helper is not None:
-                            xt_valid = constraint_helper.apply_constraints(sess.run(xt_))
+                            xt_valid = constraint_helper.apply_constraints(
+                                sess.run(xt_))
                             sess.run(assign_op, feed_dict={xt_ph: xt_valid})
                             if categorical_feature_method == 'hillclimbing':
                                 if step % categorical_feature_steps == 0:
@@ -461,13 +538,16 @@ class GPRGD(GPR):
                                     new_xt = \
                                         constraint_helper.randomize_categorical_features(
                                             current_xt)
-                                    sess.run(assign_op, feed_dict={xt_ph: new_xt})
+                                    sess.run(assign_op,
+                                             feed_dict={xt_ph: new_xt})
                                     new_loss = sess.run(loss)
                                     if current_loss < new_loss:
-                                        sess.run(assign_op, feed_dict={xt_ph: new_xt})
+                                        sess.run(assign_op,
+                                                 feed_dict={xt_ph: new_xt})
                             else:
-                                raise Exception("Unknown categorial feature method: {}".format(
-                                    categorical_feature_method))
+                                raise Exception(
+                                    "Unknown categorial feature method: {}".
+                                    format(categorical_feature_method))
                     if step == self.max_iter - 1:
                         # Record results from final iteration
                         yhats_it[-1] = sess.run(yhat_gd)[0][0]
@@ -637,7 +717,12 @@ def gd_tf(xs, ys, xt, ridge, length_scale=1.0, magnitude=1.0, max_iter=50):
         ys = np.float32(ys)
         xt_ = tf.Variable(xt[0], tf.float32)
 
-        sess = tf.Session(config=tf.ConfigProto(intra_op_parallelism_threads=8))
+        # sess = tf.Session(config=tf.ConfigProto(
+        #     intra_op_parallelism_threads=8))
+        sess = tf.Session(config=tf.ConfigProto(
+            device_count={"CPU": 20},  # limit to num_cpu_core CPU usage
+            intra_op_parallelism_threads=8,
+            inter_op_parallelism_threads=8))
         init = tf.global_variables_initializer()
         sess.run(init)
 
@@ -661,8 +746,10 @@ def gd_tf(xs, ys, xt, ridge, length_scale=1.0, magnitude=1.0, max_iter=50):
         x = tf.matmul(tf.matrix_inverse(K), ys)
         x = sess.run(x)
         yhat_ = tf.cast(tf.matmul(tf.transpose(K2), x), tf.float32)
-        sig_val = tf.cast((tf.sqrt(magnitude - tf.matmul(
-            tf.transpose(K2), tf.matmul(tf.matrix_inverse(K), K2)))), tf.float32)
+        sig_val = tf.cast((tf.sqrt(
+            magnitude -
+            tf.matmul(tf.transpose(K2), tf.matmul(tf.matrix_inverse(K), K2)))),
+                          tf.float32)
 
         LOG.debug('yhat shape: %s', str(sess.run(yhat_).shape))
         LOG.debug('sig_val shape: %s', str(sess.run(sig_val).shape))
@@ -670,7 +757,7 @@ def gd_tf(xs, ys, xt, ridge, length_scale=1.0, magnitude=1.0, max_iter=50):
         sig_val = tf.check_numerics(sig_val, message='sig_val: ')
         loss = tf.squeeze(tf.subtract(yhat_, sig_val))
         loss = tf.check_numerics(loss, message='loss: ')
-    #    optimizer = tf.train.GradientDescentOptimizer(0.1)
+        #    optimizer = tf.train.GradientDescentOptimizer(0.1)
         LOG.debug('loss: %s', str(sess.run(loss)))
         optimizer = tf.train.AdamOptimizer(0.1)
         train = optimizer.minimize(loss)
@@ -681,7 +768,8 @@ def gd_tf(xs, ys, xt, ridge, length_scale=1.0, magnitude=1.0, max_iter=50):
             assign_op = xt_.assign(xt[i])
             sess.run(assign_op)
             for step in range(max_iter):
-                LOG.debug('sample #: %d, iter #: %d, loss: %s', i, step, str(sess.run(loss)))
+                LOG.debug('sample #: %d, iter #: %d, loss: %s', i, step,
+                          str(sess.run(loss)))
                 sess.run(train)
             yhats[i] = sess.run(yhat_)[0][0]
             sigmas[i] = sess.run(sig_val)[0][0]

@@ -23,13 +23,15 @@ function renderPlot(data, div_id) {
                 label: data.units,
                 labelRenderer: $.jqplot.CanvasAxisLabelRenderer,
                 autoscale: true,
-                min: 0,
+                // min: 0,
+                min: -10,
                 tickOptions: {formatString:'%.1f'},
             },
             xaxis:{
                 label: 'Time (seconds)',
                 autoscale: true,
-                min: 0,
+                // min: 0,
+                min: -10,
             }
         },
         legend: {show: true},

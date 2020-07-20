@@ -3,6 +3,7 @@
 #
 # Copyright (c) 2017-18, Carnegie Mellon University Database Group
 #
+import logging
 from collections import namedtuple, OrderedDict
 
 from django.contrib.auth.models import User
@@ -13,6 +14,8 @@ from django.utils.timezone import now
 from .types import (DBMSType, LabelStyleType, MetricType, KnobUnitType,
                     PipelineTaskType, VarType, KnobResourceType,
                     WorkloadStatusType, AlgorithmType)
+
+LOG = logging.getLogger(__name__)
 
 
 class BaseModel(models.Model):
@@ -70,22 +73,24 @@ class DBMSCatalog(BaseModel):
 class KnobCatalog(BaseModel):
     dbms = models.ForeignKey(DBMSCatalog)
     name = models.CharField(max_length=128)
-    vartype = models.IntegerField(choices=VarType.choices(), verbose_name="variable type")
+    vartype = models.IntegerField(
+        choices=VarType.choices(), verbose_name="variable type")
     unit = models.IntegerField(choices=KnobUnitType.choices())
     category = models.TextField(null=True)
     summary = models.TextField(null=True, verbose_name='description')
     description = models.TextField(null=True)
     scope = models.CharField(max_length=16)
-    minval = models.CharField(max_length=32, null=True, verbose_name="minimum value")
-    maxval = models.CharField(max_length=32, null=True, verbose_name="maximum value")
+    minval = models.CharField(max_length=32, null=True,
+                              verbose_name="minimum value")
+    maxval = models.CharField(max_length=32, null=True,
+                              verbose_name="maximum value")
     default = models.TextField(verbose_name="default value")
     enumvals = models.TextField(null=True, verbose_name="valid values")
     context = models.CharField(max_length=32)
     tunable = models.BooleanField(verbose_name="tunable")
-    resource = models.IntegerField(choices=KnobResourceType.choices(), default=4)
+    resource = models.IntegerField(
+        choices=KnobResourceType.choices(), default=4)
     # ishardware=models.BooleanField(null=False,verbose_name="is hardware knobs or not",default=False)
-    
-
 
 
 MetricMeta = namedtuple('MetricMeta',
@@ -93,7 +98,8 @@ MetricMeta = namedtuple('MetricMeta',
 
 
 class MetricManager(models.Manager):
-
+    # transactions per second
+    THROUGHPUT_TXN_PER_SEC = 'throughput_txn_per_sec'
     # Direction of performance improvement
     LESS_IS_BETTER = '(less is better)'
     MORE_IS_BETTER = '(more is better)'
@@ -107,9 +113,17 @@ class MetricManager(models.Manager):
     LATENCY_99 = '99th_lat_ms'
     LATENCY_99_META = (LATENCY_99, '99 Percentile Latency',
                        'milliseconds', 'ms', 1, LESS_IS_BETTER)
+    # add mix target considering throughput and latency
+    MIX_TARGET = 'mix_target'
+    # MIX_TARGET_META = (MIX_TARGET, 'Ratio'
+    #                    'current / initial',
+    #                    'R0', 1, MORE_IS_BETTER)
+    MIX_TARGET_META = (MIX_TARGET, 'MIX Ratio',
+                       'current/initial and current/previous', 'R0', 1, MORE_IS_BETTER)
 
     # Objective function metric metadata
-    OBJ_META = {THROUGHPUT: THROUGHPUT_META, LATENCY_99: LATENCY_99_META}
+    OBJ_META = {THROUGHPUT: THROUGHPUT_META, LATENCY_99: LATENCY_99_META,
+                MIX_TARGET: MIX_TARGET_META}
 
     @staticmethod
     def get_default_metrics(target_objective=None):
@@ -126,12 +140,30 @@ class MetricManager(models.Manager):
 
     @staticmethod
     def get_metric_meta(dbms, target_objective=None):
+        """get metric meta
+
+        Arguments:
+            dbms {[dbms]} -- [dbms info]
+
+        Keyword Arguments:
+            target_objective {[str]} -- [the target tunning target] 
+            (default: {None})
+
+        Returns:
+            [OrderDict] -- [orderdict of sorted metrics]
+        """
+        # following is for test
+        # target_objective = MetricManager.THROUGHPUT
+        # LOG.info("models.get_metric_meta target_objective={}".format(
+        #     target_objective))
         numeric_metric_names = MetricCatalog.objects.filter(
-            dbms=dbms, metric_type=MetricType.COUNTER).values_list('name', flat=True)
+            dbms=dbms, metric_type=MetricType.COUNTER).values_list('name',
+                                                                   flat=True)
         numeric_metrics = {}
         for metname in numeric_metric_names:
             numeric_metrics[metname] = MetricMeta(
                 metname, metname, 'events / second', 'events/sec', 1, '')
+
         sorted_metrics = [(mname, mmeta) for mname, mmeta in
                           sorted(numeric_metrics.items())]
         if target_objective is not None:
@@ -140,6 +172,7 @@ class MetricManager(models.Manager):
             mname = MetricManager.get_default_objective_function()
 
         mmeta = MetricManager.OBJ_META[mname]
+        LOG.info("models.get_metric_meta mmeta={}".format(mmeta))
         sorted_metrics.insert(0, (mname, MetricMeta(*mmeta)))
         return OrderedDict(sorted_metrics)
 
@@ -207,9 +240,11 @@ class Session(BaseModel):
 
     TARGET_OBJECTIVES = [
         ('throughput_txn_per_sec', 'Throughput'),
-        ('99th_lat_ms', '99 Percentile Latency')
+        ('99th_lat_ms', '99 Percentile Latency'),
+        (MetricManager.MIX_TARGET, 'Throughput+Latency Ratio')
     ]
-    target_objective = models.CharField(choices=TARGET_OBJECTIVES, max_length=64, null=True)
+    target_objective = models.CharField(
+        choices=TARGET_OBJECTIVES, max_length=64, null=True)
     nondefault_settings = models.TextField(null=True)
 
     def clean(self):
@@ -234,7 +269,8 @@ class SessionKnobManager(models.Manager):
         knob_dicts = list(knobs.values())
         for i, _ in enumerate(knob_dicts):
             if SessionKnob.objects.filter(session=session, knob=knobs[i]).exists():
-                new_knob = SessionKnob.objects.filter(session=session, knob=knobs[i])[0]
+                new_knob = SessionKnob.objects.filter(
+                    session=session, knob=knobs[i])[0]
                 knob_dicts[i]["minval"] = new_knob.minval
                 knob_dicts[i]["maxval"] = new_knob.maxval
                 knob_dicts[i]["tunable"] = new_knob.tunable
@@ -251,8 +287,10 @@ class SessionKnob(BaseModel):
     objects = SessionKnobManager()
     session = models.ForeignKey(Session)
     knob = models.ForeignKey(KnobCatalog)
-    minval = models.CharField(max_length=32, null=True, verbose_name="minimum value")
-    maxval = models.CharField(max_length=32, null=True, verbose_name="maximum value")
+    minval = models.CharField(max_length=32, null=True,
+                              verbose_name="minimum value")
+    maxval = models.CharField(max_length=32, null=True,
+                              verbose_name="maximum value")
     tunable = models.BooleanField(verbose_name="tunable")
 
 

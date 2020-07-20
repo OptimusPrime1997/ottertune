@@ -9,35 +9,37 @@ from collections import OrderedDict
 import json
 from website.models import KnobCatalog, MetricCatalog, BackupData
 from website.types import BooleanType, MetricType, VarType
+from website.models import MetricManager, Result, MetricData
 
 import logging
 
 LOG = logging.getLogger()
 LOG.setLevel(logging.INFO)
-LATENCY_99TH = '99th_lat_ms'
-THROUGHPUT_TXN_PER_SEC = 'throughput_txn_per_sec'
 
 
 class BaseParser(object, metaclass=ABCMeta):
-
     def __init__(self, dbms_obj):
         knobs = KnobCatalog.objects.filter(dbms=dbms_obj)
         self.knob_catalog_ = {k.name: k for k in knobs}
         self.tunable_knob_catalog_ = {
-            k: v for k, v in self.knob_catalog_.items() if
-            v.tunable is True}
+            k: v
+            for k, v in self.knob_catalog_.items() if v.tunable is True
+        }
 
         metrics = MetricCatalog.objects.filter(dbms=dbms_obj)
         self.metric_catalog_ = {m.name: m for m in metrics}
         numeric_mtypes = (MetricType.COUNTER, MetricType.STATISTICS)
         self.numeric_metric_catalog_ = {
-            m: v for m, v in self.metric_catalog_.items() if
-            v.metric_type in numeric_mtypes}
+            m: v
+            for m, v in self.metric_catalog_.items()
+            if v.metric_type in numeric_mtypes
+        }
 
         self.valid_true_val = ("on", "true", "yes")
         self.valid_false_val = ("off", "false", "no")
         self.true_value = 'on'
         self.false_value = 'off'
+        self.A = 0.5
 
     @abstractproperty
     def base_configuration_settings(self):
@@ -55,13 +57,20 @@ class BaseParser(object, metaclass=ABCMeta):
     def latency_timer(self):
         pass
 
+    @abstractproperty
+    def mix_target(self):
+        pass
+
     def target_metric(self, target_objective=None):
-        if target_objective == THROUGHPUT_TXN_PER_SEC or target_objective is None:
+        if target_objective == MetricManager.THROUGHPUT_TXN_PER_SEC \
+                or target_objective is None:
             # throughput
             res = self.transactions_counter
-        elif target_objective == LATENCY_99TH:
+        elif target_objective == MetricManager.LATENCY_99:
             # 99 percentile latency
             res = self.latency_timer
+        elif target_objective == MetricManager.MIX_TARGET:
+            res = self.mix_target
         else:
             raise Exception(
                 "Target Objective {} Not Supported".format(target_objective))
@@ -81,7 +90,6 @@ class BaseParser(object, metaclass=ABCMeta):
             res = BooleanType.FALSE
         else:
             raise Exception("Invalid Boolean {}".format(bool_value))
-
         return res
 
     def convert_enum(self, enum_value, metadata):
@@ -134,9 +142,9 @@ class BaseParser(object, metaclass=ABCMeta):
                 if not self._check_knob_bool_val(value):
                     raise Exception('Knob boolean value not valid! '
                                     'Boolean values should be one of: {}, '
-                                    'but the actual value is: {}'
-                                    .format(self.valid_boolean_val_to_string(),
-                                            str(value)))
+                                    'but the actual value is: {}'.format(
+                                        self.valid_boolean_val_to_string(),
+                                        str(value)))
                 conv_value = self.convert_bool(value, metadata)
 
             elif metadata.vartype == VarType.ENUM:
@@ -146,17 +154,17 @@ class BaseParser(object, metaclass=ABCMeta):
                 conv_value = self.convert_integer(value, metadata)
                 if not self._check_knob_num_in_range(conv_value, metadata):
                     raise Exception('Knob integer num value not in range! '
-                                    'min: {}, max: {}, actual: {}'
-                                    .format(metadata.minval,
-                                            metadata.maxval, str(conv_value)))
+                                    'min: {}, max: {}, actual: {}'.format(
+                                        metadata.minval, metadata.maxval,
+                                        str(conv_value)))
 
             elif metadata.vartype == VarType.REAL:
                 conv_value = self.convert_real(value, metadata)
                 if not self._check_knob_num_in_range(conv_value, metadata):
                     raise Exception('Knob real num value not in range! '
-                                    'min: {}, max: {}, actual: {}'
-                                    .format(metadata.minval,
-                                            metadata.maxval, str(conv_value)))
+                                    'min: {}, max: {}, actual: {}'.format(
+                                        metadata.minval, metadata.maxval,
+                                        str(conv_value)))
 
             elif metadata.vartype == VarType.STRING:
                 conv_value = self.convert_string(value, metadata)
@@ -165,8 +173,8 @@ class BaseParser(object, metaclass=ABCMeta):
                 conv_value = self.convert_timestamp(value, metadata)
 
             else:
-                raise Exception(
-                    'Unknown variable type: {}'.format(metadata.vartype))
+                raise Exception('Unknown variable type: {}'.format(
+                    metadata.vartype))
 
             if conv_value is None:
                 raise Exception(
@@ -183,7 +191,10 @@ class BaseParser(object, metaclass=ABCMeta):
             value = value.lower()
         return value in self.valid_true_val or value in self.valid_false_val
 
-    def convert_dbms_metrics(self, metrics, observation_time, target_objective=None):
+    def convert_dbms_metrics(self,
+                             metrics,
+                             observation_time,
+                             target_objective=None):
         #         if len(metrics) != len(self.numeric_metric_catalog_):
         #             raise Exception('The number of metrics should be equal!')
         metric_data = {}
@@ -196,37 +207,123 @@ class BaseParser(object, metaclass=ABCMeta):
                 converted = self.convert_integer(value, metadata)
                 metric_data[name] = float(converted)
             else:
-                raise Exception(
-                    'Unknown metric type for {}: {}'.format(name, metadata.metric_type))
-        metric_data[LATENCY_99TH] = metrics[LATENCY_99TH]
-        metric_data[THROUGHPUT_TXN_PER_SEC] = metric_data[self.target_metric(
-            THROUGHPUT_TXN_PER_SEC)]
+                raise Exception('Unknown metric type for {}: {}'.format(
+                    name, metadata.metric_type))
+
+        metric_data[MetricManager.LATENCY_99] =\
+            metrics[MetricManager.LATENCY_99]
+        metric_data[MetricManager.THROUGHPUT_TXN_PER_SEC] = \
+            metric_data[self.target_metric(
+                MetricManager.THROUGHPUT_TXN_PER_SEC)]
+
         if (target_objective is not None
-            and self.target_metric(target_objective) not in metric_data
-                and target_objective != LATENCY_99TH):
+                and self.target_metric(target_objective) not in metric_data
+                and target_objective != MetricManager.LATENCY_99):
             raise Exception("Cannot find objective function")
 
         if target_objective is not None:
-            # if target_objective == LATENCY_99TH:
-            #     last_record = BackupData.objects.last()
-            #     LOG.info(last_record)
-            #     print("execute print last_record.raw_summary")
-            #     LOG.info(last_record.raw_summary)
-            #     raw_summary_data = json.loads(last_record.raw_summary)
-            #     LOG.info(raw_summary_data)
-            #     metric_data[target_objective] = float(
-            #         raw_summary_data[LATENCY_99TH])
-            # else:
             metric_data[target_objective] = metric_data[self.target_metric(
                 target_objective)]
         else:
             # default
-            metric_data[THROUGHPUT_TXN_PER_SEC] = \
+            metric_data[MetricManager.THROUGHPUT_TXN_PER_SEC] = \
                 metric_data[self.target_metric(target_objective)]
-
         return metric_data
 
-    @staticmethod
+    def my_convert_dbms_metrics(self,
+                                metrics,
+                                observation_time,
+                                session_id,
+                                target_objective=None):
+        metric_data = {}
+        for name, metadata in list(self.numeric_metric_catalog_.items()):
+            value = metrics[name]
+            if metadata.metric_type == MetricType.COUNTER:
+                converted = self.convert_integer(value, metadata)
+                metric_data[name] = float(converted) / observation_time
+            elif metadata.metric_type == MetricType.STATISTICS:
+                converted = self.convert_integer(value, metadata)
+                metric_data[name] = float(converted)
+            else:
+                raise Exception('Unknown metric type for {}: {}'.format(
+                    name, metadata.metric_type))
+
+        metric_data[MetricManager.LATENCY_99] =\
+            metrics[MetricManager.LATENCY_99]
+        # metric_data[MetricManager.MIX_TARGET] =\
+        #     metrics[MetricManager.MIX_TARGET]
+        metric_data[MetricManager.THROUGHPUT_TXN_PER_SEC] = \
+            metric_data[self.target_metric(
+                MetricManager.THROUGHPUT_TXN_PER_SEC)]
+
+        # ==================adding my_convert_dbms_metrics
+        get_metric_data = MetricData.objects.filter(
+            session_id=session_id).order_by('id')
+        M_mix = 0.0
+        M_init = 0.0
+        # print("views.handle_result_files len(get_metric_data)=",
+        #       get_metric_data)
+        # print("views.handle_result_files len(get_metric_data)={}".format(
+        #     len(get_metric_data) )
+        LOG.info("views.handle_result_files len(get_metric_data)={}".format(
+            len(get_metric_data)))
+        if len(get_metric_data) != 0:
+            get_metric_data0 = get_metric_data[0]
+            get_metric_data_prev = get_metric_data[len(get_metric_data) - 1]
+            j_data0 = json.loads(get_metric_data0.data)
+            j_data_prev = json.loads(get_metric_data_prev.data)
+            T0 = j_data0[MetricManager.THROUGHPUT]
+            L0 = j_data0[MetricManager.LATENCY_99]
+            Tprev = j_data_prev[MetricManager.THROUGHPUT]
+            Lprev = j_data_prev[MetricManager.LATENCY_99]
+
+            LOG.info("views.handle_result_files T0={},L0={},Tprev={},Lprev={}".
+                     format(T0, L0, Tprev, Lprev))
+            if T0 <= 0 or Tprev <= 0 or L0 <= 0 or Lprev <= 0:
+                raise Exception(
+                    "base.my_convert_dbms_metrics error,intial or previous Througput or Latency<=0"
+                )
+
+            T_ratio = (
+                (metric_data[MetricManager.THROUGHPUT_TXN_PER_SEC] - T0) /
+                T0) * 100
+            L_ratio = ((L0 - metric_data[MetricManager.LATENCY_99]) / L0) * 100
+            T_pratio = (
+                (metric_data[MetricManager.THROUGHPUT_TXN_PER_SEC] - Tprev) /
+                Tprev) * 100
+            L_pratio = (
+                (Lprev - metric_data[MetricManager.LATENCY_99]) / Lprev) * 100
+
+            M_init = self.A * T_ratio + (1 - self.A) * L_ratio
+            M_prev = self.A * T_pratio + (1 - self.A) * L_pratio
+            M_mix = self.A * M_init + (1 - self.A) * M_prev
+            LOG.info("veiws.handle_result_files M_init={},M_prev={},M_mix={}".
+                     format(M_init, M_prev, M_mix))
+        metric_data[MetricManager.MIX_TARGET] = M_init
+        metrics[MetricManager.LATENCY_99] = metric_data[
+            MetricManager.LATENCY_99]
+        LOG.info(
+            "views.handle_result_file metric_data['mix_target']={}".format(
+                metric_data[MetricManager.MIX_TARGET]))
+        # ==================added my_convert_dbms_metrics
+        # metric_data[MetricManager.MIX_TARGET] =\
+        #     metric_data[MetricManager.MIX_TARGET]
+        if (target_objective is not None
+                and self.target_metric(target_objective) not in metric_data
+                and target_objective != MetricManager.LATENCY_99
+                and target_objective != MetricManager.MIX_TARGET):
+            raise Exception(
+                "Cannot find objective function {}".format(target_objective))
+
+        if target_objective is not None:
+            metric_data[target_objective] = metric_data[self.target_metric(
+                target_objective)]
+        else:
+            # default
+            metric_data[MetricManager.THROUGHPUT_TXN_PER_SEC] = \
+                metric_data[self.target_metric(target_objective)]
+        return metric_data
+
     def extract_valid_variables(variables, catalog, default_value=None):
         valid_variables = {}
         diff_log = []
@@ -278,14 +375,15 @@ class BaseParser(object, metaclass=ABCMeta):
             if sub_vars is None:
                 continue
             if scope == 'global':
-                valid_variables.update(self.parse_helper(
-                    scope, valid_variables, sub_vars))
+                valid_variables.update(
+                    self.parse_helper(scope, valid_variables, sub_vars))
             elif scope == 'local':
                 for _, viewnames in list(sub_vars.items()):
                     for viewname, objnames in list(viewnames.items()):
                         for _, view_vars in list(objnames.items()):
-                            valid_variables.update(self.parse_helper(
-                                scope, valid_variables, {viewname: view_vars}))
+                            valid_variables.update(
+                                self.parse_helper(scope, valid_variables,
+                                                  {viewname: view_vars}))
             else:
                 raise Exception('Unsupported variable scope: {}'.format(scope))
         return valid_variables
@@ -297,8 +395,8 @@ class BaseParser(object, metaclass=ABCMeta):
             assert len(valid_knobs[k]) == 1
             valid_knobs[k] = valid_knobs[k][0]
         # Extract all valid knobs
-        return BaseParser.extract_valid_variables(
-            valid_knobs, self.knob_catalog_)
+        return BaseParser.extract_valid_variables(valid_knobs,
+                                                  self.knob_catalog_)
 
     def parse_dbms_metrics(self, metrics):
         # Some DBMSs measure different types of stats (e.g., global, local)
@@ -323,8 +421,8 @@ class BaseParser(object, metaclass=ABCMeta):
                 else:
                     valid_metrics[name] = str(sum(values))
             else:
-                raise Exception(
-                    'Invalid metric type: {}'.format(metric.metric_type))
+                raise Exception('Invalid metric type: {}'.format(
+                    metric.metric_type))
         return valid_metrics, diffs
 
     def calculate_change_in_metrics(self, metrics_start, metrics_end):
@@ -422,11 +520,12 @@ class BaseParser(object, metaclass=ABCMeta):
         return formatted_knobs
 
     def filter_numeric_metrics(self, metrics):
-        return OrderedDict(((k, v) for k, v in list(metrics.items()) if
-                            k in self.numeric_metric_catalog_))
+        return OrderedDict(((k, v) for k, v in list(metrics.items())
+                            if k in self.numeric_metric_catalog_))
 
     def filter_tunable_knobs(self, knobs):
-        return OrderedDict(((k, v) for k, v in list(knobs.items()) if
-                            k in self.tunable_knob_catalog_))
+        return OrderedDict(((k, v) for k, v in list(knobs.items())
+                            if k in self.tunable_knob_catalog_))
+
 
 # pylint: enable=no-self-use

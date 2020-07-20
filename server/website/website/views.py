@@ -6,6 +6,7 @@
 import logging
 import datetime
 import re
+import json
 from collections import OrderedDict
 
 from django.contrib.auth import login, logout
@@ -44,8 +45,6 @@ from .set_default_knobs import set_default_knobs
 
 
 LOG = logging.getLogger(__name__)
-LATENCY_99TH = '99th_lat_ms'
-
 # For the html template to access dict object
 @register.filter
 def get_item(dictionary, key):
@@ -443,7 +442,7 @@ def new_result(request):
 
 
 def handle_result_files(session, files):
-    LOG.info("view.handle_result_files execute")
+    LOG.info("views->handle_result_files starting")
     from celery import chain
     # Combine into contiguous files
     files = {k: b''.join(v.chunks()).decode() for k, v in list(files.items())}
@@ -451,7 +450,7 @@ def handle_result_files(session, files):
     # Load the contents of the controller's summary file
     summary = JSONUtil.loads(files['summary'])
 
-    LOG.info("Execute view.result_files funtion, summary={}".format(summary))
+    LOG.info("view.result_files funtion, data_backup.raw_summary={}".format(summary))
 
     dbms_type = DBMSType.type(summary['database_type'])
     # TODO: fix parse_version_string
@@ -488,14 +487,14 @@ def handle_result_files(session, files):
                             '(actual=' + dbms.full_name + ')')
 
     # Load, process, and store the knobs in the DBMS's configuration
-    # knob_diffs是什么？
+    # knob_diffs=knobs differences
     knob_dict, knob_diffs = Parser.parse_dbms_knobs(
         dbms.pk, JSONUtil.loads(files['knobs']))
     tunable_knob_dict = Parser.convert_dbms_knobs(
         dbms.pk, knob_dict)
     # save knobdata
-    LOG.info("tunable_knob_dict= {}".format(
-        JSONUtil.dumps(tunable_knob_dict, pprint=True, sort=True)))
+    LOG.info("views.handle_result_file tunable_knob_dict size={}".format(
+        len(tunable_knob_dict)))
     knob_data = KnobData.objects.create_knob_data(
         session, JSONUtil.dumps(knob_dict, pprint=True, sort=True),
         JSONUtil.dumps(tunable_knob_dict, pprint=True, sort=True), dbms)
@@ -508,15 +507,55 @@ def handle_result_files(session, files):
     metric_dict = Parser.calculate_change_in_metrics(
         dbms.pk, initial_metric_dict, final_metric_dict)
     initial_metric_diffs.extend(final_metric_diffs)
-    metric_dict[LATENCY_99TH] = float(summary[LATENCY_99TH])
-    # this maybe error
-    numeric_metric_dict = Parser.convert_dbms_metrics(
-        dbms.pk, metric_dict, observation_time, session.target_objective)
+
+    metric_dict[MetricManager.LATENCY_99] = float(
+        summary[MetricManager.LATENCY_99])
+
+    # get_metric_data = MetricData.objects.filter(
+    #     session_id=session.id).order_by('id')
+    # T_ratio = 0.0
+    # L_ratio = 0.0
+    # print("views.handle_result_files len(get_metric_data)=", get_metric_data)
+    # # print("views.handle_result_files len(get_metric_data)={}".format(
+    # #     len(get_metric_data) )
+    # LOG.info("views.handle_result_files len(get_metric_data)={}".format(
+    #     len(get_metric_data)))
+    # if len(get_metric_data) != 0:
+    #     get_metric_data0 = get_metric_data[0]
+    #     j_data0 = json.loads(get_metric_data0.data)
+    #     T0 = j_data0[MetricManager.THROUGHPUT]
+    #     L0 = j_data0[MetricManager.LATENCY_99]
+
+    #     LOG.info("views.handle_result_files T0={},L0={}".format(
+    #         T0, L0))
+    #     if T0 <= 0:
+    #         raise Exception(
+    #             "base.my_convert_dbms_metrics error,intial Throughput<=0")
+    #     if L0 <= 0:
+    #         raise Exception(
+    #             "base.my_convert_dbms_metrics error,intial Latency<=0")
+    #     T_ratio = (
+    #         metric_dict[MetricManager.THROUGHPUT_TXN_PER_SEC]-T0)/T0
+    #     L_ratio = (L0-metric_dict[MetricManager.LATENCY_99])/L0
+    #     LOG.info("veiws.handle_result_files "
+    #              "T0={},\nL0={},\n T_ratio={},\n L_ratio={}".format(T0, L0,
+    #                                                                 T_ratio,
+    #                                                                 L_ratio))
+    # metric_dict[MetricManager.MIX_TARGET] = T_ratio+L_ratio
+    # LOG.info("views.handle_result_file metric_dict['mix_target']={}".format(
+    #     metric_dict[MetricManager.MIX_TARGET]))
+
+    # compute numeric metric,change to my_convert_dbms_metrics with mix_target
+    # numeric_metric_dict = Parser.convert_dbms_metrics(
+    #     dbms.pk, metric_dict, observation_time, session.target_objective)
+    numeric_metric_dict = Parser.my_convert_dbms_metrics(
+        dbms.pk, metric_dict, observation_time,
+        session.id, session.target_objective)
+
     metric_data = MetricData.objects.create_metric_data(
         session, JSONUtil.dumps(metric_dict, pprint=True, sort=True),
         JSONUtil.dumps(numeric_metric_dict, pprint=True, sort=True), dbms)
-    LOG.info("numeric_metric_dict= {}".format(
-        JSONUtil.dumps(numeric_metric_dict, pprint=True, sort=True)))
+    LOG.info("views.handle_result_files get numeric_metric_dict")
 
     # Create a new workload if this one does not already exist
     workload = Workload.objects.create_workload(
@@ -527,10 +566,11 @@ def handle_result_files(session, files):
         session, dbms, workload, knob_data, metric_data,
         start_time, end_time, observation_time)
     result.save()
-    LOG.info("saved result= {}".format(result))
+    LOG.info("views.handle_result_file saved result= {}".format(result))
 
-    # Workload is now modified so backgroundTasks can make calculationw
+    # Workload is now modified so backgroundTasks can make calculation
     workload.status = WorkloadStatusType.MODIFIED
+    LOG.info("views.handle_result_file change workload status and save it")
     workload.save()
 
     # Save all original data
@@ -543,6 +583,7 @@ def handle_result_files(session, files):
         metric_log=initial_metric_diffs)
     backup_data.save()
 
+    # save session data
     nondefault_settings = Parser.get_nondefault_knob_settings(
         dbms.pk, knob_dict)
     session.project.last_update = now()
@@ -553,15 +594,18 @@ def handle_result_files(session, files):
     session.save()
 
     if session.tuning_session == 'no_tuning_session':
+        # if it's no tunning session, save all data and return
         return HttpResponse("Result stored successfully!")
 
     result_id = result.pk
     response = None
     if session.algorithm == AlgorithmType.OTTERTUNE:
-        LOG.info("views.handle_reuslt_files execute AlgorithmType.OTTERTUNE")
+        LOG.info("views.handle_reuslt_files start AlgorithmType.OTTERTUNE")
         response = chain(aggregate_target_results.s(result.pk),
                          map_workload.s(),
                          configuration_recommendation.s()).apply_async()
+        LOG.info(
+            "views.handle_reuslt_files AlgorithmType.OTTERTUNE async executed")
     elif session.algorithm == AlgorithmType.ALGORITHM1:
         pass
     elif session.algorithm == AlgorithmType.ALGORITHM2:
@@ -572,7 +616,11 @@ def handle_result_files(session, files):
     LOG.info("views.handle_result_files response= {}".format(response))
     result.task_ids = ','.join(taskmeta_ids)
     result.save()
-    return HttpResponse("Result stored successfully! Running tuner...(status={})  Result ID:{} "
+
+    LOG.info("views->handle_result_files ending,return new result response")
+
+    return HttpResponse("Result stored successfully! "
+                        "Running tuner...(status={})  Result ID:{} "
                         .format(response.status, result_id))
 
 
@@ -991,7 +1039,8 @@ def get_timeline_data(request):
                 str(res.pk)
             ])
         data_package['knobtimelines'].append(data)
-    return HttpResponse(JSONUtil.dumps(data_package), content_type='application/json')
+    return HttpResponse(JSONUtil.dumps(data_package),
+                        content_type='application/json')
 
 
 # get the lastest result
@@ -1022,8 +1071,9 @@ def give_result(request, upload_code):  # pylint: disable=unused-argument
 
     # success
     res = Result.objects.get(pk=lastest_result.pk)
-    LOG.info("Get Result: {}".format(res))
+    LOG.info("views.give_result result={}".format(res))
     next_conf = res.next_configuration
     json_next_conf = JSONUtil.dumps(next_conf)
-    LOG.info("Get next conf: {}".format(json_next_conf))
-    return HttpResponse(JSONUtil.dumps(res.next_configuration), content_type='application/json')
+    LOG.info("views.give_result get next_conf={}".format(json_next_conf))
+    return HttpResponse(JSONUtil.dumps(res.next_configuration),
+                        content_type='application/json')

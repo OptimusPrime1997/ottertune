@@ -21,8 +21,16 @@ from fabric.state import output as fabric_output
 import paramiko
 from collections import OrderedDict
 
-
 VM_IP = "192.168.122.131"
+IS_SYSBENCH = True
+# ----------------sysbench workload enumeration start--
+RO = 'ro'
+RW = 'rw'
+WO = 'wo'
+# ----------------sysbench workload enumeration end---
+# set sysbench workload
+SYSBENCH_WORKLOAD = RO
+
 LOG = logging.getLogger()
 # LOG.setLevel(logging.DEBUG)
 LOG.setLevel(logging.INFO)
@@ -31,8 +39,7 @@ Formatter = logging.Formatter(  # pylint: disable=invalid-name
     "%(asctime)s [%(levelname)s]  %(message)s")
 
 # print the log
-ConsoleHandler = logging.StreamHandler(
-    sys.stdout)  # pylint: disable=invalid-name
+ConsoleHandler = logging.StreamHandler(sys.stdout)  # pylint: disable=invalid-name
 ConsoleHandler.setFormatter(Formatter)
 LOG.addHandler(ConsoleHandler)
 
@@ -89,8 +96,8 @@ def restart_remote_database():
     if CONF['database_type'] == 'postgres':
         cmd = 'echo "123" | sudo -S service postgresql restart'
     elif CONF['database_type'] == 'oracle':
-        driver_folder = CONF['oltpbench_log'][:CONF['oltpbench_log'].rfind(
-            '/')+1]
+        driver_folder = CONF['oltpbench_log'][:CONF['oltpbench_log'].
+                                              rfind('/') + 1]
         cmd = ('cd {} && sh oracleScripts/shutdownOracle.sh '
                '&& sh oracleScripts/startupOracle.sh').format(driver_folder)
     else:
@@ -173,8 +180,30 @@ def change_conf():
 
 @task
 def change_remote_conf():
-    driver_folder = CONF['oltpbench_log'][:CONF['oltpbench_log'].rfind(
-        '/')+1]
+    driver_folder = CONF['oltpbench_log'][:CONF['oltpbench_log'].rfind('/') +
+                                          1]
+
+    next_conf = 'next_config'
+    local('cd {}  && echo "123" | sudo -S rsync -auv next_config root@{}:{}/'.
+          format(driver_folder, VM_IP, driver_folder, driver_folder))
+
+    cmd = 'cd {} && echo "123" | sudo -S python3 ConfParser.py {} {} {}'.\
+          format(driver_folder, CONF['database_type'],
+                 next_conf, CONF['database_conf'])
+    remote_exec(VM_IP, cmd)
+
+
+@task
+def clean_remote_conf():
+    driver_folder = CONF['oltpbench_log'][:CONF['oltpbench_log'].rfind('/') +
+                                          1]
+    rm_cmd = "cd {} && echo '123' | sudo -S rm next_config ".format(
+        driver_folder)
+    create_cmd = "cd {} &&  sudo touch next_config".format(driver_folder)
+    # create_cmd="cd {} && echo '123' | sudo -S rm next_config && echo '123' | sudo touch next_config"
+    remote_exec(VM_IP, rm_cmd)
+    remote_exec(VM_IP, create_cmd)
+    # exit()
     next_conf = 'next_config'
     cmd = 'cd {} && echo "123" | sudo -S python3 ConfParser.py {} {} {}'.\
           format(driver_folder, CONF['database_type'],
@@ -200,17 +229,26 @@ def run_oltpbench():
 
 @task
 def run_oltpbench_bg():
-    cmd = 'echo "123" | sudo -S ./oltpbenchmark -b {} -c {} --execute=true\
-         -s 30 -o outputfile > {} 2>&1 &'.format(CONF['oltpbench_workload'],
-                                                 CONF['oltpbench_config'], CONF['oltpbench_log'])
-    with lcd(CONF['oltpbench_home']):  # pylint: disable=not-context-manager
-        local(cmd)
+    if IS_SYSBENCH is True:
+        cmd = 'echo "123" | sudo -S bash /home/ljh/exp/scripts/sysbench/postgresql/p_{}_run.sh > {} 2>&1 &'.format(
+            SYSBENCH_WORKLOAD, CONF['sysbench_log'])
+        with lcd(CONF['oltpbench_home']):  # pylint: disable=not-context-manager
+            local(cmd)
+        LOG.info("sysbench {} started".format(SYSBENCH_WORKLOAD))
+    else:
+        cmd = 'echo "123" | sudo -S ./oltpbenchmark -b {} -c {} --execute=true\
+            -s 30 -o outputfile > {} 2>&1 &'.format(CONF['oltpbench_workload'],
+                                                    CONF['oltpbench_config'],
+                                                    CONF['oltpbench_log'])
+        with lcd(CONF['oltpbench_home']):  # pylint: disable=not-context-manager
+            local(cmd)
+        LOG.info("OLTP tpcc started")
 
 
 @task
 def run_remote_oltpbench_bg():
     cmd = "cd {}/ && nohup {}/oltpbenchmark -b {} -c {} --execute=true \
-        -s 30 -o outputfile > {} 2>&1 &".\
+        -s 30 -o outputfile > {} 2>&1 &"                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                .\
           format(CONF['oltpbench_home'], CONF['oltpbench_home'], CONF['oltpbench_workload'],
                  CONF['oltpbench_config'], CONF['oltpbench_log'])
     # with lcd(CONF['oltpbench_home']):  # pylint: disable=not-context-manager
@@ -232,7 +270,8 @@ def run_remote_controller():
           format(CONF['controller_config'], CONF['controller_log'])
     # with lcd("../controller"):  # pylint: disable=not-context-manager
     #     local(cmd)
-    driver_folder = CONF['oltpbench_log'][:CONF['oltpbench_log'].rfind('/')+1]
+    driver_folder = CONF['oltpbench_log'][:CONF['oltpbench_log'].rfind('/') +
+                                          1]
     remote_exec(VM_IP, 'cd {}../controller && {}'.format(driver_folder, cmd))
 
 
@@ -246,20 +285,23 @@ def signal_controller():
 
 @task
 def signal_remote_controller():
-    driver_folder = CONF['oltpbench_log'][:CONF['oltpbench_log'].rfind(
-        '/')+1]
-    pid_path = driver_folder+'../controller/pid.txt'
+    driver_folder = CONF['oltpbench_log'][:CONF['oltpbench_log'].rfind('/') +
+                                          1]
+    pid_path = driver_folder + '../controller/pid.txt'
     pid = remote_exec(VM_IP, 'cat {}'.format(pid_path))
     remote_exec(VM_IP, 'echo "123" | sudo -S kill -2 {}'.format(pid))
-    remote_exec(VM_IP, 'echo "123"|sudo -S ps -ef | grep gradle |'
-                ' awk {print $2}|xargs sudo kill -2 ')
+    remote_exec(
+        VM_IP, 'echo "123"|sudo -S ps -ef | grep gradle |'
+        ' awk {print $2}|xargs sudo kill -2 ')
 
 
 @task
 def save_dbms_result():
     t = int(time.time())
-    files = ['knobs.json', 'metrics_after.json',
-             'metrics_before.json', 'summary.json']
+    files = [
+        'knobs.json', 'metrics_after.json', 'metrics_before.json',
+        'summary.json'
+    ]
     for f_ in files:
         f_prefix = f_.split('.')[0]
         cmd = 'cp ../controller/output/{} {}/{}__{}.json'.\
@@ -270,10 +312,12 @@ def save_dbms_result():
 @task
 def save_remote_dbms_result():
     t = int(time.time())
-    files = ['knobs.json', 'metrics_after.json',
-             'metrics_before.json', 'summary.json']
-    driver_folder = CONF['oltpbench_log'][:CONF['oltpbench_log'].rfind(
-        '/')+1]
+    files = [
+        'knobs.json', 'metrics_after.json', 'metrics_before.json',
+        'summary.json'
+    ]
+    driver_folder = CONF['oltpbench_log'][:CONF['oltpbench_log'].rfind('/') +
+                                          1]
     for f_ in files:
         f_prefix = f_.split('.')[0]
         cmd = ('echo "123"'
@@ -297,52 +341,58 @@ def free_remote_cache():
 @task
 def upload_result():
     cmd = 'python3 ../../server/website/script/upload/upload.py \
-           ../controller/output/ {} {}/new_result/'.format(CONF['upload_code'],
-                                                           CONF['upload_url'])
+           ../controller/output/ {} {}/new_result/'.format(
+        CONF['upload_code'], CONF['upload_url'])
     local(cmd)
 
 
 @task
 def upload_remote_result():
-    driver_folder = CONF['oltpbench_log'][:CONF['oltpbench_log'].rfind(
-        '/')+1]
+    driver_folder = CONF['oltpbench_log'][:CONF['oltpbench_log'].rfind('/') +
+                                          1]
     cmd = 'python3 {}../../server/website/script/upload/upload.py \
            {}../controller/output/ {} {}/new_result/'.format(
-        driver_folder,
-        driver_folder,
-        CONF['upload_code'],
-        CONF['upload_url'])
+        driver_folder, driver_folder, CONF['upload_code'], CONF['upload_url'])
     remote_exec(VM_IP, cmd)
 
 
 @task
 def get_result():
+    driver_folder = CONF['oltpbench_log'][:CONF['oltpbench_log'].rfind('/') +
+                                          1]
     cmd = 'python3 ../../script/query_and_get.py {} {} 5'.\
           format(CONF['upload_url'], CONF['upload_code'])
     local(cmd)
+    local('cd {} \
+    && echo "123" | sudo -S rsync -auv next_config root@{}:{}/next_config'.
+          format(driver_folder, VM_IP, driver_folder, driver_folder))
 
 
 @task
 def get_remote_result():
-    driver_folder = CONF['oltpbench_log'][:CONF['oltpbench_log'].rfind(
-        '/')+1]
+    driver_folder = CONF['oltpbench_log'][:CONF['oltpbench_log'].rfind('/') +
+                                          1]
     cmd = 'cd {} && echo "123" | \
-        sudo -S python3 ../../script/query_and_get.py {} {} 5'.\
+        sudo -S python3 ../../script/query_and_get.py {} {} 5'                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                .\
           format(driver_folder, CONF['upload_url'], CONF['upload_code'])
     # local(cmd)
     remote_exec(VM_IP, cmd)
-    remote_exec(VM_IP, 'cd {} \
-    && echo "123" | sudo -S rsync -au root@{}:{}next_config {}'
-                .format(driver_folder,
-                        VM_IP,
-                        driver_folder,
-                        driver_folder))
+    remote_exec(
+        VM_IP, 'cd {} \
+    && echo "123" | sudo -S rsync -au root@{}:{}next_config {}'.format(
+            driver_folder, VM_IP, driver_folder, driver_folder))
 
 
 @task
 def add_udf():
-    cmd = 'sudo python3 ./LatencyUDF.py ../controller/output/ /home/ljh/projects/oltpbench/results/'
-    local(cmd)
+    if IS_SYSBENCH is True:
+        cmd = 'sudo python3 ./LatencyUDF.py ../controller/output/ {}'.format(
+            CONF['sysbench_log'])
+        local(cmd)
+        # LOG.info("sysbench not add 99th latency")
+    else:
+        cmd = 'sudo python3 ./LatencyUDF.py ../controller/output/ /home/ljh/projects/oltpbench/results/'
+        local(cmd)
 
 
 # @task
@@ -355,16 +405,15 @@ def add_udf():
 
 @task
 def upload_batch():
-    cmd = 'python3 ./upload_batch.py {} {} {}/new_result/'.format(CONF['save_path'],
-                                                                  CONF['upload_code'],
-                                                                  CONF['upload_url'])
+    cmd = 'python3 ./upload_batch.py {} {} {}/new_result/'.format(
+        CONF['save_path'], CONF['upload_code'], CONF['upload_url'])
     local(cmd)
 
 
 @task
 def dump_database():
-    db_file_path = '{}/{}.dump'.format(
-        CONF['database_save_path'], CONF['database_name'])
+    db_file_path = '{}/{}.dump'.format(CONF['database_save_path'],
+                                       CONF['database_name'])
     if os.path.exists(db_file_path):
         LOG.info('%s already exists ! ', db_file_path)
         return False
@@ -375,10 +424,9 @@ def dump_database():
             cmd = 'expdp {}/{}@{} schemas={} dumpfile={}.dump DIRECTORY=dpdata'.format(
                 'c##tpcc', 'oracle', 'orcldb', 'c##tpcc', 'orcldb')
         elif CONF['database_type'] == 'postgres':
-            cmd = 'PGPASSWORD={} pg_dump -U {} -h 127.0.0.1 -p 5432 -U F c -d {} > {}'.format(CONF['password'],
-                                                                                              CONF['username'],
-                                                                                              CONF['database_name'],
-                                                                                              db_file_path)
+            cmd = 'PGPASSWORD={} pg_dump -U {} -h 127.0.0.1 -p 5432 -U F c -d {} > {}'.format(
+                CONF['password'], CONF['username'], CONF['database_name'],
+                db_file_path)
         else:
             raise Exception("Database Type {} Not Implemented !".format(
                 CONF['database_type']))
@@ -388,8 +436,21 @@ def dump_database():
 
 @task
 def dump_remote_database():
-    db_file_path = '{}/{}.dump'.format(
-        CONF['database_save_path'], CONF['database_name'])
+    if IS_SYSBENCH is True:
+        return
+    db_file_path = '{}/{}.dump'.format(CONF['database_save_path'],
+                                       CONF['database_name'])
+    remote_exec(
+        VM_IP,
+        "cd {} && rsync -auv ljh@192.168.122.1:/home/ljh/stores/{}.dump {}/{}.dump"
+        .format(
+            CONF['database_save_path'],
+            CONF['database_name'],
+            CONF['database_save_path'],
+            CONF['database_name'],
+        ))
+    LOG.info('%s already exists ! ', db_file_path)
+    return False
     if remote_file_exists(VM_IP, db_file_path):
         LOG.info('%s already exists ! ', db_file_path)
         return False
@@ -421,8 +482,8 @@ def restore_database():
         # You may want to modify the username, password, and dump file name in the script
         cmd = 'sh oracleScripts/restoreOracle.sh'
     elif CONF['database_type'] == 'postgres':
-        db_file_path = '{}/{}.dump'.format(
-            CONF['database_save_path'], CONF['database_name'])
+        db_file_path = '{}/{}.dump'.format(CONF['database_save_path'],
+                                           CONF['database_name'])
         drop_database()
         create_database()
         cmd = 'PGPASSWORD={} pg_restore -h 127.0.0.1 -p 5432 -U  {} -n public -j 8 -F c -d {} {}'.\
@@ -438,14 +499,16 @@ def restore_database():
 
 @task
 def restore_remote_database():
+    my_restore_remote_database()
+    return None
     if CONF['database_type'] == 'oracle':
         # You must create a directory named dpdata through sqlplus in your Oracle database
         # The following script assumes such directory exists.
         # You may want to modify the username, password, and dump file name in the script
         cmd = 'sh oracleScripts/restoreOracle.sh'
     elif CONF['database_type'] == 'postgres':
-        db_file_path = '{}/{}.dump'.format(
-            CONF['database_save_path'], CONF['database_name'])
+        db_file_path = '{}/{}.dump'.format(CONF['database_save_path'],
+                                           CONF['database_name'])
         drop_remote_database()
         create_remote_database()
         cmd = 'echo "123"|sudo -S PGPASSWORD={} pg_restore -h 127.0.0.1 -U {} -n public -j 8 -F c -d {} {}'.\
@@ -467,16 +530,19 @@ def my_restore_remote_database():
         # You may want to modify the username, password, and dump file name in the script
         cmd = 'sh oracleScripts/restoreOracle.sh'
     elif CONF['database_type'] == 'postgres':
-        cmd1 = ('service postgresql stop ')
+        cmd1 = ('echo "123"|sudo -S service postgresql stop ')
         remote_exec(VM_IP, cmd1)
-        if remote_file_exists(VM_IP, '{}/postgresql'.format(
-                CONF['database_save_path'])):
-            remote_exec(VM_IP, 'rm -r {}/postgresql')
-        cmd = ('cd {}/ && tar -xvf {}/postgresql.tar  && service postgresql restart'
-               ).format(
-            CONF['database_save_path'],
-            CONF['database_save_path'],
-            CONF['database_save_path'])
+        remote_exec(
+            VM_IP, 'echo "123"|sudo -S rm -r {}/postgresql'.format(
+                CONF['database_save_path']))
+        remote_exec(
+            VM_IP,
+            'echo "123"|sudo -S rsync -auv ljh@192.168.122.1:/home/ljh/stores/postgresql.tar {}/'
+            .format(CONF['database_save_path']))
+        cmd = (
+            'cd {}/ && echo "123"| sudo -S  tar -xvf {}/postgresql.tar  && service postgresql restart'
+        ).format(CONF['database_save_path'], CONF['database_save_path'],
+                 CONF['database_save_path'])
         # remote_exec(VM_IP, remote_cmd)
         # db_file_path = '{}/{}.dump'.format(
         #     CONF['database_save_path'], CONF['database_name'])
@@ -494,9 +560,11 @@ def my_restore_remote_database():
 
 
 def _ready_to_start_oltpbench():
+    time.sleep(1)
+    LOG.info("/ottertune _ready_to_start_oltpebnch test")
     return (os.path.exists(CONF['controller_log']) and
-            'Output the process pid to'
-            in open(CONF['controller_log']).read())
+            'Output the process pid to' in open(CONF['controller_log']).read())
+
 
 # remote ready check
 @task
@@ -509,9 +577,15 @@ def _ready_to_start_remote_oltpbench():
 
 
 def _ready_to_start_controller():
-    return (os.path.exists(CONF['oltpbench_log']) and
-            'Warmup complete, starting measurements'
-            in open(CONF['oltpbench_log']).read())
+    time.sleep(1)
+    LOG.info("/ottertuen _ready_to_start_controller executed!")
+    if IS_SYSBENCH is True:
+        return (os.path.exists(CONF['sysbench_log'])
+                and 'Threads started!' in open(CONF['sysbench_log']).read())
+    else:
+        return (os.path.exists(CONF['oltpbench_log'])
+                and 'Warmup complete, starting measurements' in open(
+                    CONF['oltpbench_log']).read())
 
 
 @task
@@ -524,16 +598,35 @@ def _ready_to_start_remote_controller():
     #         in open(CONF['oltpbench_log']).read())
 
 
+# @task
+# def test_warmup_exec():
+#     log_out=remote_exec(VM_IP, 'cat {}'.format(CONF['oltpbench_log']))
+#     print("test_warmup_exec:{}".format(log_out))
+
+
+@task
+def get_throughut():
+    log_out = remote_exec(VM_IP, 'cat {}'.format(CONF['oltpbench_log']))
+    print("test_warmup_exec:{}".format(log_out))
+
+
 def _ready_to_shut_down_controller():
     pid_file_path = '../controller/pid.txt'
-    return (os.path.exists(pid_file_path) and os.path.exists(CONF['oltpbench_log']) and
-            'Output throughput samples into file' in open(CONF['oltpbench_log']).read())
+    if IS_SYSBENCH is True:
+        return (os.path.exists(pid_file_path)
+                and os.path.exists(CONF['sysbench_log'])
+                and 'SQL statistics' in open(CONF['sysbench_log']).read())
+    else:
+        return (os.path.exists(pid_file_path)
+                and os.path.exists(CONF['oltpbench_log'])
+                and 'Output throughput samples into file' in open(
+                    CONF['oltpbench_log']).read())
 
 
 def _ready_to_shut_down_remote_controller():
-    driver_folder = CONF['oltpbench_log'][:CONF['oltpbench_log'].rfind(
-        '/')+1]
-    pid_file_path = driver_folder+'../controller/pid.txt'
+    driver_folder = CONF['oltpbench_log'][:CONF['oltpbench_log'].rfind('/') +
+                                          1]
+    pid_file_path = driver_folder + '../controller/pid.txt'
     return remote_file_exists(VM_IP, pid_file_path) \
         and remote_file_exists(VM_IP, CONF['oltpbench_log']) \
         and 'Output throughput samples into file' in \
@@ -541,8 +634,15 @@ def _ready_to_shut_down_remote_controller():
 
 
 def remote_file_exists(ip, path):
-    out = remote_exec(ip, 'ls {}'.format(path))
-    return 'ls:' not in out
+    local_cmd = "if ssh root@{} test -e {};then echo 1 ; else 0 ; fi".format(
+        ip, path)
+    r_str = local(local_cmd)
+    if r_str == '1':
+        LOG.info("{} exists {}".format(path, ip))
+        return True
+    else:
+        LOG.info("{} not exists {}".format(path, ip))
+        return False
 
 
 def clean_logs():
@@ -552,6 +652,10 @@ def clean_logs():
 
     # remove controller log
     cmd = 'rm -f {}'.format(CONF['controller_log'])
+    local(cmd)
+
+    # remove sysbench log
+    cmd = 'echo "123" |sudo -S rm -f {}'.format(CONF['sysbench_log'])
     local(cmd)
 
 
@@ -568,16 +672,16 @@ def clean_remote_logs():
 
 @task
 def lhs_samples(count=10):
-    cmd = 'python3 lhs.py {} {} {}'.format(
-        count, CONF['lhs_knob_path'], CONF['lhs_save_path'])
+    cmd = 'python3 lhs.py {} {} {}'.format(count, CONF['lhs_knob_path'],
+                                           CONF['lhs_save_path'])
     local(cmd)
 
 
 @task
 def lhs_remote_samples(count=10):
     cmd = 'cd {} && echo "123" | sudo -S python3 lhs.py {} {} {}'.format(
-        CONF['qemu_script_path'],
-        count, CONF['lhs_knob_path'], CONF['lhs_save_path'])
+        CONF['qemu_script_path'], count, CONF['lhs_knob_path'],
+        CONF['lhs_save_path'])
     # local(cmd)
     remote_exec(VM_IP, cmd)
 
@@ -722,7 +826,7 @@ def loop():
     p.join()
 
     # add user defined target objective
-    # add_udf()
+    add_udf()
 
     # save result
     save_dbms_result()
@@ -742,13 +846,6 @@ def loop():
 
 @task
 def trial_loop():
-
-    # restart qemu vm
-    # restart_qemu()
-
-    # free remote vm cache
-    # free_remote_cache()
-
     # free cache
     free_remote_cache()
 
@@ -780,19 +877,19 @@ def trial_loop():
     while not _ready_to_start_oltpbench():
         pass
     run_oltpbench_bg()
-    LOG.info('Run OLTP-Bench')
+    LOG.info('Run Test-Bench')
 
     # the controller starts the first collection
     while not _ready_to_start_controller():
         pass
     signal_controller()
-    LOG.info('Start the first collection')
+    LOG.info('Start the current collection')
 
     # stop the experiment
     while not _ready_to_shut_down_controller():
         pass
     signal_controller()
-    LOG.info('Start the second collection, shut down the controller')
+    LOG.info('Start the next collection, shut down the controller')
 
     p.join()
 
@@ -803,32 +900,37 @@ def trial_loop():
     save_dbms_result()
 
     # test for code
-    # exit()
+    exit()
 
     # upload result
     upload_result()
-
+    # return
     # get result
-    get_remote_result()
+    # get_remote_result()
+    get_result()
 
     # change config
     change_remote_conf()
 
 
 @task
-def run_lhs():
+def run_lhs(max_iter=1000):
     datadir = CONF['lhs_save_path']
     samples = glob.glob(os.path.join(datadir, 'config_*'))
-
+    samples = sorted(samples)
     # dump database if it's not done before.
     dump = dump_remote_database()
 
     for i, sample in enumerate(samples):
+        if i == 0:
+            clean_remote_conf()
+        if i >= int(max_iter):
+            break
         # reload database periodically
         if RELOAD_INTERVAL > 0:
             if i % RELOAD_INTERVAL == 0:
                 if i == 0 and dump is False:
-                    # restore_remote_database()
+                    restore_remote_database()
                     pass
                 elif i > 0:
                     restore_remote_database()
@@ -836,7 +938,6 @@ def run_lhs():
         free_remote_cache()
 
         LOG.info('\n\n LHS:Start %s-th sample %s \n\n', i, sample)
-        # check memory usage
         # check_memory_usage()
 
         # check disk usage
@@ -848,7 +949,11 @@ def run_lhs():
         cmd = 'echo "123" | sudo -S scp {} root@{}:{}/next_config'.format(
             sample, VM_IP, CONF['qemu_script_path'])
         local(cmd)
+        mv_cmd = 'cd {} && echo "123" |  sudo -S mv {} ../executed_configs/'.format(
+            CONF['lhs_save_path'], sample)
+        local(mv_cmd)
 
+        LOG.info("rm config: {}".format(mv_cmd))
         # remove oltpbench log and controller log
         clean_logs()
 
@@ -885,6 +990,8 @@ def run_lhs():
         LOG.info('Start the second collection, shut down the controller')
 
         p.join()
+        # add user defined target objective
+        add_udf()
 
         # save result
         save_dbms_result()
@@ -896,7 +1003,8 @@ def run_lhs():
             # create oracle AWR report for performance analysis
             if CONF['database_type'] == 'oracle':
                 local(
-                    'sh oracleScripts/snapshotOracle.sh && sh oracleScripts/awrOracle.sh')
+                    'sh oracleScripts/snapshotOracle.sh && sh oracleScripts/awrOracle.sh'
+                )
 
 
 @task
@@ -905,12 +1013,16 @@ def run_loops(max_iter=5):
     dump = dump_database()
 
     for i in range(int(max_iter)):
+        if i == 0:
+            clean_remote_conf()
         if RELOAD_INTERVAL > 0:
             if i % RELOAD_INTERVAL == 0:
                 if i == 0 and dump is False:
-                    restore_remote_database()
+                    # restore_remote_database()
+                    pass
                 elif i > 0:
-                    restore_remote_database()
+                    # restore_remote_database()
+                    pass
         LOG.info('The %s-th Loop Starts / Total Loops %s', i + 1, max_iter)
         loop()
         LOG.info('The %s-th Loop Ends / Total Loops %s', i + 1, max_iter)
@@ -922,13 +1034,17 @@ def run_trials(max_iter=5):
     dump = dump_remote_database()
 
     for i in range(int(max_iter)):
+        if i == 0:
+            clean_remote_conf()
+            pass
         if RELOAD_INTERVAL > 0:
             if i % RELOAD_INTERVAL == 0:
                 if i == 0 and dump is False:
-                    pass
                     # restore_remote_database()
+                    pass
                 elif i > 0:
-                    restore_remote_database()
+                    # restore_remote_database()
+                    pass
         LOG.info('The %s-th Loop Starts / Total Loops %s', i + 1, max_iter)
         trial_loop()
         LOG.info('The %s-th Loop Ends / Total Loops %s', i + 1, max_iter)
@@ -946,9 +1062,11 @@ def run_remote_loops(max_iter=1):
         #             restore_remote_database()
         #         elif i > 0:
         #             restore_remote_database()
-        LOG.info('The %s-th remote Loop Starts / Total Loops %s', i + 1, max_iter)
+        LOG.info('The %s-th remote Loop Starts / Total Loops %s', i + 1,
+                 max_iter)
         remote_loop(i)
-        LOG.info('The %s-th remote Loop Ends / Total Loops %s', i + 1, max_iter)
+        LOG.info('The %s-th remote Loop Ends / Total Loops %s', i + 1,
+                 max_iter)
 
 
 @task
@@ -963,7 +1081,8 @@ def restart_qemu():
     next_config_name = "next_config.json"
     qemu_parameter = ''
     with open(next_config_name, 'r') as next_config:
-        config = json.load(next_config, encoding="UTF-8",
+        config = json.load(next_config,
+                           encoding="UTF-8",
                            object_pairs_hook=OrderedDict)
         qemu_parameter = config['qemu_parameter']
     if len(qemu_parameter) == 0:
@@ -981,29 +1100,30 @@ def restart_qemu():
     cpu_num = qemu_parameter['cpu_number']
     # GB,must delete the letter
     tmp_mem_size = qemu_parameter['memory_size']  # the unit is GB
-    mem_size = tmp_mem_size[:len(tmp_mem_size)-1]
+    mem_size = tmp_mem_size[:len(tmp_mem_size) - 1]
     start_vm_cmd = "sudo bash ./qemuScripts/start_vm_N_Q_C.sh {} {} {} {}"\
         .format(
             vm_num, queue_num, cpu_num, mem_size)
     local(start_vm_cmd)
     # exit()
     out_result = remote_exec('192.168.122.1', 'ping -c 2 {}'.format(VM_IP))
-    LOG.info("fabfile.restart_qemu ensure qemu is started. ping result={}"
-             .format(out_result))
+    LOG.info(
+        "fabfile.restart_qemu ensure qemu is started. ping result={}".format(
+            out_result))
     if 'Unreachable' in out_result:
         remote_exec(VM_IP, 'echo "123"| sudo -S poweroff')
         while 'Unreachable' in out_result:
-            out_result = remote_exec(
-                '192.168.122.1', 'ping -c 2 {}'.format(VM_IP))
+            out_result = remote_exec('192.168.122.1',
+                                     'ping -c 2 {}'.format(VM_IP))
 
 
 @task
 def rsync_remote_folder_all():
     qemu_script_path = CONF['qemu_script_path']
     otter_home = qemu_script_path[:qemu_script_path.find('/', 1)]
-    otter_home_parent = otter_home[:otter_home.rfind('/')+1]
+    otter_home_parent = otter_home[:otter_home.rfind('/') + 1]
     oltpbench_home = CONF['oltpbench_home']
-    oltpbench_home_parent = oltpbench_home[:oltpbench_home.rfind('/')+1]
+    oltpbench_home_parent = oltpbench_home[:oltpbench_home.rfind('/') + 1]
     database_config_folder =\
         CONF['database_conf'][:CONF['database_conf'].rfind('/')]
     database_config_folder_parent = \
@@ -1035,8 +1155,8 @@ def rsync_remote_folder_all():
 def rsync_remote_single(folder, ip, folder_parent):
     rsync_remote_cmd = 'echo "123" | sudo -S rsync -au {} root@{}:{}'.format(
         folder, ip, folder_parent)
-    LOG.info("fabfile.rsync_remote_single remote_cmd={}".format(
-        rsync_remote_cmd))
+    LOG.info(
+        "fabfile.rsync_remote_single remote_cmd={}".format(rsync_remote_cmd))
     remote_exec(ip, rsync_remote_cmd)
 
 
@@ -1054,14 +1174,15 @@ def remote_exec(host: str, cmd: str) -> None:
     # 允许连接不在know_hosts文件中的主机
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     # 连接服务器
-    ssh.connect(hostname=host, port=22,
-                username='root', password='123')
+    ssh.connect(hostname=host, port=22, username='root', password='123')
     # 执行命令  stdout命令结果，stderr错误
     LOG.info("fabfile.remote_exec cmd={}".format(cmd))
     stdin, stdout, stderr = ssh.exec_command(cmd)
     # 获取命令结果
     std_str = str(stdout.read(), encoding="utf-8")
-    LOG.info("connect to {} execute {} \n std_out={}".format(VM_IP, cmd, std_str))
+    LOG.info("connect to {} execute {} \n std_out={}".format(
+        VM_IP, cmd, std_str))
+    # print("std_str=",std_str)
     # 关闭连接
     ssh.close()
     return std_str

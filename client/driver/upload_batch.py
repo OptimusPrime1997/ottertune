@@ -21,6 +21,7 @@ LOG.setLevel(logging.INFO)
 def upload_batch(datadir, upload_code, url):
 
     samples = glob.glob(os.path.join(datadir, '*__summary.json'))
+    samples = sorted(samples)
     count = len(samples)
     samples_prefix = []
 
@@ -32,12 +33,17 @@ def upload_batch(datadir, upload_code, url):
     for i in range(count):
         prefix = samples_prefix[i]
         params = {
-            'summary': open(os.path.join(datadir, '{}__summary.json'.format(prefix)), 'rb'),
-            'knobs': open(os.path.join(datadir, '{}__knobs.json'.format(prefix)), 'rb'),
+            'summary': open(os.path.join(datadir,
+                                         '{}__summary.json'.format(prefix)),
+                            'rb'),
+            'knobs': open(os.path.join(datadir,
+                                       '{}__knobs.json'.format(prefix)), 'rb'),
             'metrics_before': open(os.path.join(datadir,
-                                                '{}__metrics_before.json'.format(prefix)), 'rb'),
+                                                '{}__metrics_before.json'.format(prefix)),
+                                   'rb'),
             'metrics_after': open(os.path.join(datadir,
-                                               '{}__metrics_after.json'.format(prefix)), 'rb'),
+                                               '{}__metrics_after.json'.format(prefix)),
+                                  'rb'),
         }
 
         LOG.info('Upload %d-th sample %s__*.json', i + 1, prefix)
@@ -48,12 +54,14 @@ def upload_batch(datadir, upload_code, url):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Upload generated data to the website")
+    parser = argparse.ArgumentParser(
+        description="Upload generated data to the website")
     parser.add_argument('datadir', type=str, nargs=1,
                         help='Directory containing the generated data')
     parser.add_argument('upload_code', type=str, nargs=1,
                         help='The website\'s upload code')
-    parser.add_argument('url', type=str, default='http://0.0.0.0:8000/new_result/',
+    parser.add_argument('url', type=str,
+                        default='http://0.0.0.0:8000/new_result/',
                         nargs='?', help='The upload url: server_ip/new_result/')
     args = parser.parse_args()
     upload_batch(args.datadir[0], args.upload_code[0], args.url)

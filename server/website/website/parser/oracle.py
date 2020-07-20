@@ -5,6 +5,7 @@
 #
 
 from .base import BaseParser
+from website.models import MetricManager
 
 
 class OracleParser(BaseParser):
@@ -32,6 +33,10 @@ class OracleParser(BaseParser):
     @property
     def latency_timer(self):
         return 'global.user commits'
+
+    @property
+    def mix_target(self):
+        return MetricManager.MIX_TARGET
 
     def parse_version_string(self, version_string):
         return version_string

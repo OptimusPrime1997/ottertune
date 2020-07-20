@@ -10,6 +10,7 @@ NUM_SAMPLES = 30
 
 #  the number of selected tuning knobs
 IMPORTANT_KNOB_NUMBER = 10
+# IMPORTANT_KNOB_NUMBER = 4
 
 #  top K config with best performance put into prediction
 TOP_NUM_CONFIG = 10
@@ -36,7 +37,7 @@ MAX_TRAIN_SIZE = 7000
 BATCH_SIZE = 3000
 
 # Threads for TensorFlow config
-NUM_THREADS = 4
+NUM_THREADS = 8
 
 # ---GRADIENT DESCENT CONSTANTS---
 #  the maximum iterations of gradient descent

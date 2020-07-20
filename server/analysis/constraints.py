@@ -16,9 +16,12 @@ LOG = get_analysis_logger(__name__)
 
 
 class ParamConstraintHelper(object):
-
-    def __init__(self, scaler, encoder=None, binary_vars=None,
-                 init_flip_prob=0.3, flip_prob_decay=0.5):
+    def __init__(self,
+                 scaler,
+                 encoder=None,
+                 binary_vars=None,
+                 init_flip_prob=0.3,
+                 flip_prob_decay=0.5):
         if 'inverse_transform' not in dir(scaler):
             raise Exception(
                 "Scaler object must provide function inverse_transform(X)")
@@ -43,11 +46,11 @@ class ParamConstraintHelper(object):
             cat_start_indices = self.encoder_.feature_indices_
             for i, nvals in enumerate(n_values):
                 start_idx = cat_start_indices[i]
-                cvals = conv_sample[start_idx: start_idx + nvals]
-                cvals = np.array(np.arange(nvals) ==
-                                 np.argmax(cvals), dtype=float)
+                cvals = conv_sample[start_idx:start_idx + nvals]
+                cvals = np.array(np.arange(nvals) == np.argmax(cvals),
+                                 dtype=float)
                 assert np.sum(cvals) == 1
-                conv_sample[start_idx: start_idx + nvals] = cvals
+                conv_sample[start_idx:start_idx + nvals] = cvals
 
         # apply binary (0-1) constraints
         if self.binary_vars_ is not None:
@@ -71,22 +74,19 @@ class ParamConstraintHelper(object):
         return sample
 
     def _handle_rescaling(self, sample, rescale):
-        LOG.info("sample=", sample)
-        print("sample=", sample)
+        # LOG.info("sample={}".format(sample))
+        # print("sample=" sample)
         if rescale:
             if sample.ndim == 1:
                 sample = sample.reshape(1, -1)
                 temp_scaler = self.scaler_.transform(sample)
-                LOG.info("temp_scaler=", temp_scaler)
-                print("temp_scaler=", temp_scaler)
             # ravel convert to one dimension array
-            result=self.scaler_.transform(sample).ravel()
-            LOG.info("result=",result)
-            print("result=",result)
+            result = self.scaler_.transform(sample).ravel()
             return self.scaler_.transform(sample).ravel()
         return sample
 
-    def randomize_categorical_features(self, sample, scaled=True, rescale=True):
+    def randomize_categorical_features(self, sample, scaled=True,
+                                       rescale=True):
         # If there are no categorical features, this function is a no-op.
         if not self.is_dummy_encoded_:
             return sample
@@ -95,7 +95,7 @@ class ParamConstraintHelper(object):
         n_cat_feats = len(n_values)
 
         conv_sample = self._handle_scaling(sample, scaled)
-        flips = np.zeros((n_cat_feats,), dtype=bool)
+        flips = np.zeros((n_cat_feats, ), dtype=bool)
 
         # Always flip at least one categorical feature
         flips[0] = True
@@ -115,7 +115,7 @@ class ParamConstraintHelper(object):
         for i, nvals in enumerate(n_values):
             if flips[i]:
                 start_idx = cat_start_indices[i]
-                current_val = conv_sample[start_idx: start_idx + nvals]
+                current_val = conv_sample[start_idx:start_idx + nvals]
                 assert np.all(np.logical_or(current_val == 0, current_val == 1)), \
                     "categorical {0}: value not 0/1: {1}".format(
                         i, current_val)
@@ -124,7 +124,7 @@ class ParamConstraintHelper(object):
                 r = np.zeros(nvals)
                 r[np.random.choice(choices)] = 1
                 assert np.sum(r) == 1
-                conv_sample[start_idx: start_idx + nvals] = r
+                conv_sample[start_idx:start_idx + nvals] = r
 
         conv_sample = self._handle_rescaling(conv_sample, rescale)
         return conv_sample

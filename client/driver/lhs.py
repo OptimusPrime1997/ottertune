@@ -58,10 +58,6 @@ def get_knob_raw(value, knob_type):
         raise Exception('Knob Type does not support')
 
 
-
-        
-
-
 def get_knob_readable(value, knob_type):
     if knob_type == 'integer':
         return int(round(value))
@@ -87,7 +83,8 @@ def get_knobs_readable(values, types):
 def main(args):
 
     if (len(sys.argv) != 4):
-        raise Exception("Usage: python3 lhs.py [Samples Count] [Knob Path] [Save Path]")
+        raise Exception(
+            "Usage: python3 lhs.py [Samples Count] [Knob Path] [Save Path]")
 
     knob_path = args[2]
     save_path = args[3]
@@ -101,8 +98,10 @@ def main(args):
 
     for knob in tuning_knobs:
         names.append(knob['name'])
-        maxvals.append(get_knob_raw(knob['tuning_range']['maxval'], knob['type']))
-        minvals.append(get_knob_raw(knob['tuning_range']['minval'], knob['type']))
+        maxvals.append(get_knob_raw(
+            knob['tuning_range']['maxval'], knob['type']))
+        minvals.append(get_knob_raw(
+            knob['tuning_range']['minval'], knob['type']))
         types.append(knob['type'])
 
     nsamples = int(args[1])
@@ -112,7 +111,8 @@ def main(args):
     minvals = np.array(minvals)
     scales = maxvals - minvals
     for fidx in range(nfeats):
-        samples[:, fidx] = uniform(loc=minvals[fidx], scale=scales[fidx]).ppf(samples[:, fidx])
+        samples[:, fidx] = uniform(
+            loc=minvals[fidx], scale=scales[fidx]).ppf(samples[:, fidx])
 
     samples_readable = []
     for sample in samples:
@@ -121,8 +121,10 @@ def main(args):
     config = {'recommendation': {}}
     for sidx in range(nsamples):
         for fidx in range(nfeats):
-            config["recommendation"][names[fidx]] = samples_readable[sidx][fidx]
-        with open(os.path.join(save_path, 'config_' + str(sidx)), 'w+') as f:
+            config["recommendation"][names[fidx]
+                                     ] = samples_readable[sidx][fidx]
+        with open(os.path.join(save_path, 'config_' + str(sidx).zfill(3)),
+                  'w+') as f:
             f.write(json.dumps(config))
 
 

@@ -1,7 +1,49 @@
 import paramiko
 import json
 from collections import OrderedDict
-from website.
+
+from sklearn.datasets import make_regression
+from sklearn.linear_model import Lasso, LassoCV
+import numpy as np
+
+
+def train_lasso():
+    reg_data, reg_target = make_regression(
+        n_samples=200, n_features=500, n_informative=5, noise=5)
+    print("reg_data.shape:", reg_data.shape)
+    print("reg_target.shape:", reg_target.shape)
+
+    lasso = Lasso(alpha=1, copy_X=True, fit_intercept=True, max_iter=1000,
+                  normalize=False, positive=False, precompute=False,
+                  random_state=None, selection='cyclic',
+                  tol=0.0001, warm_start=False)
+    lasso.fit(reg_data, reg_target)
+    print("alpha=1 lasso nozero:", np.sum(lasso.coef_ != 0))
+
+    lasso_0 = Lasso(0)
+    lasso_0.fit(reg_data, reg_target)
+    print("alpha=0 lasso nozero:", np.sum(lasso_0.coef_ != 0))
+
+    lassocv = LassoCV()
+    lassocv.fit(reg_data, reg_target)
+    print(np.sum(lassocv.coef_))
+    lassocv1 = LassoCV(alphas=None, copy_X=True, cv=None, eps=0.001,
+                       fit_intercept=True, max_iter=1000,
+                       n_alphas=100, n_jobs=1,
+                       normalize=False, positive=False,
+                       precompute='auto', random_state=None,
+                       selection='cyclic', tol=0.0001,
+                       verbose=False)
+    lassocv1.fit(reg_data, reg_target)
+    print(lassocv1.alpha_)
+    print(lassocv1.coef_[:5])
+    print(np.sum(lassocv1.coef_ != 0))
+    mask = (lassocv1.coef_ != 0)
+    new_reg_data = reg_data[:, mask]
+    print(new_reg_data.shape)
+
+
+# ===================================================
 
 
 def remote_connect():
@@ -101,4 +143,5 @@ def test_loads():
 
 if __name__ == "__main__":
     # pass
-    test_json()
+    # test_json()
+    train_lasso()

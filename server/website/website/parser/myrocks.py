@@ -10,6 +10,7 @@ from collections import OrderedDict
 from .base import BaseParser
 from website.types import KnobUnitType, MetricType, VarType
 from website.utils import ConversionUtil
+from website.models import MetricManager
 
 
 class MyRocksParser(BaseParser):
@@ -30,8 +31,13 @@ class MyRocksParser(BaseParser):
     def transactions_counter(self):
         return 'session_status.questions'
 
+    @property
     def latency_timer(self):
         return 'session_status.questions'
+
+    @property
+    def mix_target(self):
+        return MetricManager.MIX_TARGET
 
     def convert_integer(self, int_value, metadata):
         converted = None
@@ -76,7 +82,8 @@ class MyRocksParser(BaseParser):
             if scope == 'local':
                 for obj_name, sub_vars in list(variables.items()):
                     for var_name, var_value in list(sub_vars.items()):  # local
-                        full_name = '{}.{}.{}'.format(view_name, obj_name, var_name)
+                        full_name = '{}.{}.{}'.format(
+                            view_name, obj_name, var_name)
                         valid_variables[full_name] = var_value
             elif scope == 'global':
                 for var_name, var_value in list(variables.items()):  # global
@@ -95,7 +102,8 @@ class MyRocksParser(BaseParser):
             if sub_vars is None:
                 continue
             if scope == 'global':
-                valid_variables.update(self.parse_helper('global', valid_variables, sub_vars))
+                valid_variables.update(self.parse_helper(
+                    'global', valid_variables, sub_vars))
             elif scope == 'local':
                 for _, viewnames in list(sub_vars.items()):
                     for viewname, objnames in list(viewnames.items()):
@@ -138,7 +146,8 @@ class MyRocksParser(BaseParser):
             if prt_name in valid_lc_variables:
                 valid_name = valid_lc_variables[prt_name].name
                 if prt_name != valid_name:
-                    diff_log.append(('miscapitalized', valid_name, var_name, var_value))
+                    diff_log.append(
+                        ('miscapitalized', valid_name, var_name, var_value))
                 valid_variables[var_name] = var_value
             else:
                 diff_log.append(('extra', None, var_name, var_value))
@@ -162,7 +171,8 @@ class MyRocksParser(BaseParser):
         adjusted_metrics = {}
         for met_name, start_val in list(metrics_start.items()):
             end_val = metrics_end[met_name]
-            met_info = self.metric_catalog_[MyRocksParser.partial_name(met_name)]
+            met_info = self.metric_catalog_[
+                MyRocksParser.partial_name(met_name)]
             if met_info.vartype == VarType.INTEGER or \
                     met_info.vartype == VarType.REAL:
                 conversion_fn = self.convert_integer if \
@@ -209,7 +219,8 @@ class MyRocksParser(BaseParser):
             raise Exception("Cannot find objective function")
 
         if target_objective is not None:
-            metric_data[target_objective] = metric_data[self.target_metric(target_objective)]
+            metric_data[target_objective] = metric_data[self.target_metric(
+                target_objective)]
         else:
             # default
             metric_data['throughput_txn_per_sec'] = \

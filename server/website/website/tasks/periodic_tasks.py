@@ -14,8 +14,7 @@ from sklearn.preprocessing import StandardScaler
 from analysis.cluster import KMeansClusters, create_kselection_model
 from analysis.factor_analysis import FactorAnalysis
 from analysis.lasso import LassoPath
-from analysis.preprocessing import (Bin, get_shuffle_indices,
-                                    DummyEncoder,
+from analysis.preprocessing import (Bin, get_shuffle_indices, DummyEncoder,
                                     consolidate_columnlabels)
 from website.models import PipelineData, PipelineRun, Result, Workload
 from website.types import PipelineTaskType, WorkloadStatusType
@@ -30,12 +29,15 @@ MIN_WORKLOAD_RESULTS_COUNT = 5
 # Run the background tasks every 5 minutes
 @periodic_task(run_every=300, name="run_background_tasks")
 def run_background_tasks():
-    LOG.debug("Starting background tasks")
+    LOG.info("periodic_tasks->run_backgroud starting")
     # Find modified and not modified workloads, we only have to calculate for the
     # modified workloads.
-    modified_workloads = Workload.objects.filter(status=WorkloadStatusType.MODIFIED)
-    non_modified_workloads = Workload.objects.filter(status=WorkloadStatusType.PROCESSED)
-    non_modified_workloads = list(non_modified_workloads.values_list('pk', flat=True))
+    modified_workloads = Workload.objects.filter(
+        status=WorkloadStatusType.MODIFIED)
+    non_modified_workloads = Workload.objects.filter(
+        status=WorkloadStatusType.PROCESSED)
+    non_modified_workloads = list(
+        non_modified_workloads.values_list('pk', flat=True))
     last_pipeline_run = PipelineRun.objects.get_latest()
 
     if len(modified_workloads) == 0:
@@ -53,14 +55,15 @@ def run_background_tasks():
         wkld_results = Result.objects.filter(workload=workload)
         if wkld_results.exists() is False:
             # delete the workload
-            LOG.debug("Deleting workload %d because it has no results.", workload.id)
+            LOG.debug("Deleting workload %d because it has no results.",
+                      workload.id)
             workload.delete()
             continue
 
         # Check that there are enough results in the workload
         if wkld_results.count() < MIN_WORKLOAD_RESULTS_COUNT:
-            LOG.debug("Not enough results in workload %d (only %d results).", workload.id,
-                      wkld_results.count())
+            LOG.debug("Not enough results in workload %d (only %d results).",
+                      workload.id, wkld_results.count())
             continue
 
         workload.status = WorkloadStatusType.PROCESSING
@@ -101,20 +104,26 @@ def run_background_tasks():
         LOG.debug("Pruning metrics for workload %d.", workload.id)
         pruned_metrics = run_workload_characterization(metric_data=metric_data)
         LOG.debug("pruned_metrics: %s", str(pruned_metrics))
-        pruned_metrics_entry = PipelineData(pipeline_run=pipeline_run_obj,
-                                            task_type=PipelineTaskType.PRUNED_METRICS,
-                                            workload=workload,
-                                            data=JSONUtil.dumps(pruned_metrics),
-                                            creation_time=now())
+        pruned_metrics_entry = PipelineData(
+            pipeline_run=pipeline_run_obj,
+            task_type=PipelineTaskType.PRUNED_METRICS,
+            workload=workload,
+            data=JSONUtil.dumps(pruned_metrics),
+            creation_time=now())
         pruned_metrics_entry.save()
 
         # Use the pruned metrics to filter the metric_data
-        pruned_metric_idxs = [i for i, metric_name in enumerate(metric_data['columnlabels'])
-                              if metric_name in pruned_metrics]
+        pruned_metric_idxs = [
+            i for i, metric_name in enumerate(metric_data['columnlabels'])
+            if metric_name in pruned_metrics
+        ]
         pruned_metric_data = {
-            'data': metric_data['data'][:, pruned_metric_idxs],
-            'rowlabels': copy.deepcopy(metric_data['rowlabels']),
-            'columnlabels': [metric_data['columnlabels'][i] for i in pruned_metric_idxs]
+            'data':
+            metric_data['data'][:, pruned_metric_idxs],
+            'rowlabels':
+            copy.deepcopy(metric_data['rowlabels']),
+            'columnlabels':
+            [metric_data['columnlabels'][i] for i in pruned_metric_idxs]
         }
 
         # Execute the Knob Identification task to compute an ordered list of knobs
@@ -125,18 +134,20 @@ def run_background_tasks():
                                                metric_data=pruned_metric_data,
                                                dbms=workload.dbms)
         LOG.debug("ranked_knobs: %s", str(ranked_knobs))
-        ranked_knobs_entry = PipelineData(pipeline_run=pipeline_run_obj,
-                                          task_type=PipelineTaskType.RANKED_KNOBS,
-                                          workload=workload,
-                                          data=JSONUtil.dumps(ranked_knobs),
-                                          creation_time=now())
+        ranked_knobs_entry = PipelineData(
+            pipeline_run=pipeline_run_obj,
+            task_type=PipelineTaskType.RANKED_KNOBS,
+            workload=workload,
+            data=JSONUtil.dumps(ranked_knobs),
+            creation_time=now())
         ranked_knobs_entry.save()
 
         workload.status = WorkloadStatusType.PROCESSED
         workload.save()
     LOG.debug("Finished processing modified workloads")
 
-    non_modified_workloads = Workload.objects.filter(pk__in=non_modified_workloads)
+    non_modified_workloads = Workload.objects.filter(
+        pk__in=non_modified_workloads)
     # Update the latest pipeline data for the non modified workloads to have this pipeline run
     PipelineData.objects.filter(workload__in=non_modified_workloads,
                                 pipeline_run=last_pipeline_run)\
@@ -147,6 +158,7 @@ def run_background_tasks():
     pipeline_run_obj.end_time = now()
     pipeline_run_obj.save()
     LOG.debug("Finished background tasks")
+    LOG.info("periodic_tasks->run_backgroud end")
 
 
 def aggregate_data(wkld_results):
@@ -201,7 +213,7 @@ def run_workload_characterization(metric_data):
     #     - 'rowlabels': a list of identifiers for the rows in the matrix
     #     - 'columnlabels': a list of the metric names corresponding to
     #                       the columns in the data matrix
-
+    LOG.info("periodic_tasks->run_workload_characterization start")
     matrix = metric_data['data']
     columnlabels = metric_data['columnlabels']
 
@@ -235,7 +247,8 @@ def run_workload_characterization(metric_data):
     # Run Kmeans for # clusters k in range(1, num_nonduplicate_metrics - 1)
     # K should be much smaller than n_cols in detK, For now max_cluster <= 20
     kmeans_models = KMeansClusters()
-    kmeans_models.fit(components, min_cluster=1,
+    kmeans_models.fit(components,
+                      min_cluster=1,
                       max_cluster=min(n_cols - 1, 20),
                       sample_labels=nonconst_columnlabels,
                       estimator_params={'n_init': 50})
@@ -244,12 +257,16 @@ def run_workload_characterization(metric_data):
     gapk = create_kselection_model("gap-statistic")
     gapk.fit(components, kmeans_models.cluster_map_)
 
-    LOG.debug("Found optimal number of clusters: %d", gapk.optimal_num_clusters_)
+    LOG.debug("Found optimal number of clusters: %d",
+              gapk.optimal_num_clusters_)
 
     # Get pruned metrics, cloest samples of each cluster center
-    pruned_metrics = kmeans_models.cluster_map_[gapk.optimal_num_clusters_].get_closest_samples()
+    pruned_metrics = kmeans_models.cluster_map_[
+        gapk.optimal_num_clusters_].get_closest_samples()
 
     # Return pruned metrics
+    LOG.info(
+        "periodic_tasks->run_workload_characterization return pruned_metrics")
     return pruned_metrics
 
 
@@ -268,7 +285,7 @@ def run_knob_identification(knob_data, metric_data, dbms):
     # When running the lasso algorithm, the knob_data matrix is set of
     # independent variables (X) and the metric_data is the set of
     # dependent variables (y).
-
+    LOG.info("periodic_tasks->run_knob_identification start")
     knob_matrix = knob_data['data']
     knob_columnlabels = knob_data['columnlabels']
 
@@ -297,33 +314,37 @@ def run_knob_identification(knob_data, metric_data, dbms):
 
     # determine which knobs need encoding (enums with >2 possible values)
 
-    categorical_info = DataUtil.dummy_encoder_helper(nonconst_knob_columnlabels,
-                                                     dbms)
+    categorical_info = DataUtil.dummy_encoder_helper(
+        nonconst_knob_columnlabels, dbms)
     # encode categorical variable first (at least, before standardize)
     dummy_encoder = DummyEncoder(categorical_info['n_values'],
                                  categorical_info['categorical_features'],
                                  categorical_info['cat_columnlabels'],
                                  categorical_info['noncat_columnlabels'])
-    encoded_knob_matrix = dummy_encoder.fit_transform(
-        nonconst_knob_matrix)
+    encoded_knob_matrix = dummy_encoder.fit_transform(nonconst_knob_matrix)
     encoded_knob_columnlabels = dummy_encoder.new_labels
 
     # standardize values in each column to N(0, 1)
     standardizer = StandardScaler()
     standardized_knob_matrix = standardizer.fit_transform(encoded_knob_matrix)
-    standardized_metric_matrix = standardizer.fit_transform(nonconst_metric_matrix)
+    standardized_metric_matrix = standardizer.fit_transform(
+        nonconst_metric_matrix)
 
     # shuffle rows (note: same shuffle applied to both knob and metric matrices)
-    shuffle_indices = get_shuffle_indices(standardized_knob_matrix.shape[0], seed=17)
+    shuffle_indices = get_shuffle_indices(standardized_knob_matrix.shape[0],
+                                          seed=17)
     shuffled_knob_matrix = standardized_knob_matrix[shuffle_indices, :]
     shuffled_metric_matrix = standardized_metric_matrix[shuffle_indices, :]
 
     # run lasso algorithm
     lasso_model = LassoPath()
-    lasso_model.fit(shuffled_knob_matrix, shuffled_metric_matrix, encoded_knob_columnlabels)
+    lasso_model.fit(shuffled_knob_matrix, shuffled_metric_matrix,
+                    encoded_knob_columnlabels)
 
     # consolidate categorical feature columns, and reset to original names
     encoded_knobs = lasso_model.get_ranked_features()
     consolidated_knobs = consolidate_columnlabels(encoded_knobs)
 
+    LOG.info(
+        "periodic_tasks->run_knob_identification return consolidated_knobs")
     return consolidated_knobs

@@ -14,7 +14,9 @@ function renderPlot(data, div_id) {
             yaxis:{
                 label: data.unit,
                 labelRenderer: $.jqplot.CanvasAxisLabelRenderer,
-                min: 0, autoscale:true,
+                // min: 0, 
+                min: -10, 
+                autoscale:true,
             },
             xaxis:{
                 renderer: $.jqplot.CategoryAxisRenderer,

@@ -3,6 +3,7 @@
 #
 # Copyright (c) 2017-18, Carnegie Mellon University Database Group
 #
+import os
 import random
 import queue
 import numpy as np
@@ -16,12 +17,13 @@ from analysis.gp import GPRNP
 from analysis.gp_tf import GPRGD
 from analysis.preprocessing import Bin, DummyEncoder
 from analysis.constraints import ParamConstraintHelper
-from website.models import (PipelineData, PipelineRun, Result, Workload, KnobCatalog,
-                            MetricCatalog, SessionKnob)
+from website.models import (PipelineData, PipelineRun, Result, Workload,
+                            KnobCatalog, MetricCatalog, SessionKnob)
 from website.parser import Parser
 from website.types import PipelineTaskType
 from website.utils import DataUtil, JSONUtil
-from website.settings import IMPORTANT_KNOB_NUMBER, NUM_SAMPLES, TOP_NUM_CONFIG  # pylint: disable=no-name-in-module
+from website.settings import (IMPORTANT_KNOB_NUMBER, NUM_SAMPLES,
+                              TOP_NUM_CONFIG)  # pylint: disable=no-name-in-module
 from website.settings import (DEFAULT_LENGTH_SCALE, DEFAULT_MAGNITUDE,
                               MAX_TRAIN_SIZE, BATCH_SIZE, NUM_THREADS,
                               DEFAULT_RIDGE, DEFAULT_LEARNING_RATE,
@@ -34,7 +36,6 @@ LOG = get_task_logger(__name__)
 
 
 class UpdateTask(Task):  # pylint: disable=abstract-method
-
     def __init__(self):
         self.rate_limit = '50/m'
         self.max_retries = 3
@@ -42,10 +43,9 @@ class UpdateTask(Task):  # pylint: disable=abstract-method
 
 
 class AggregateTargetResults(UpdateTask):  # pylint: disable=abstract-method
-
     def on_success(self, retval, task_id, args, kwargs):
-        super(AggregateTargetResults, self).on_success(
-            retval, task_id, args, kwargs)
+        super(AggregateTargetResults, self).on_success(retval, task_id, args,
+                                                       kwargs)
 
         # Completely delete this result because it's huge and not
         # interesting
@@ -55,7 +55,6 @@ class AggregateTargetResults(UpdateTask):  # pylint: disable=abstract-method
 
 
 class MapWorkload(UpdateTask):  # pylint: disable=abstract-method
-
     def on_success(self, retval, task_id, args, kwargs):
         super(MapWorkload, self).on_success(retval, task_id, args, kwargs)
 
@@ -75,27 +74,28 @@ class MapWorkload(UpdateTask):  # pylint: disable=abstract-method
 
 
 class ConfigurationRecommendation(UpdateTask):  # pylint: disable=abstract-method
-
     def on_success(self, retval, task_id, args, kwargs):
-        super(ConfigurationRecommendation, self).on_success(
-            retval, task_id, args, kwargs)
+        super(ConfigurationRecommendation,
+              self).on_success(retval, task_id, args, kwargs)
 
         result_id = args[0]['newest_result_id']
         result = Result.objects.get(pk=result_id)
 
         # Replace result with formatted result
-        formatted_params = Parser.format_dbms_knobs(
-            result.dbms.pk, retval['recommendation'])
+        formatted_params = Parser.format_dbms_knobs(result.dbms.pk,
+                                                    retval['recommendation'])
         task_meta = TaskMeta.objects.get(task_id=task_id)
         retval['recommendation'] = formatted_params
         task_meta.result = retval
         task_meta.save()
 
         # Create next configuration to try
-        config = Parser.create_knob_configuration(
-            result.dbms.pk, retval['recommendation'])
+        config = Parser.create_knob_configuration(result.dbms.pk,
+                                                  retval['recommendation'])
         retval['recommendation'] = config
         result.next_configuration = JSONUtil.dumps(retval)
+        LOG.info("async_tasks.ConfigurationRecommendation.on_success "
+                 "next_configuration={}".format(result.next_configuration))
         result.save()
 
 
@@ -106,13 +106,14 @@ def clean_knob_data(knob_matrix, knob_labels, session):
     matrix = np.array(knob_matrix)
     missing_columns = set(knob_cat) - set(knob_labels)
     unused_columns = set(knob_labels) - set(knob_cat)
-    LOG.debug("clean_knob_data added %d knobs and removed %d knobs.", len(missing_columns),
-              len(unused_columns))
+    LOG.debug("clean_knob_data added %d knobs and removed %d knobs.",
+              len(missing_columns), len(unused_columns))
     # If columns are missing from the matrix
     if missing_columns:
         for knob in missing_columns:
-            knob_object = KnobCatalog.objects.get(
-                dbms=session.dbms, name=knob, tunable=True)
+            knob_object = KnobCatalog.objects.get(dbms=session.dbms,
+                                                  name=knob,
+                                                  tunable=True)
             index = knob_cat.index(knob)
             matrix = np.insert(matrix, index, knob_object.default, axis=1)
             knob_labels.insert(index, knob)
@@ -128,7 +129,7 @@ def clean_knob_data(knob_matrix, knob_labels, session):
 
 @task(base=AggregateTargetResults, name='aggregate_target_results')
 def aggregate_target_results(result_id):
-    LOG.info("async_tasks aggregate_target_result execute, chain 1 method")
+    LOG.info("async_tasks.aggregate_target_result execute, chain 1 method")
     # Check that we've completed the background tasks at least once. We need
     # this data in order to make a configuration recommendation (until we
     # implement a sampling technique to generate new training data).
@@ -137,7 +138,8 @@ def aggregate_target_results(result_id):
         workload=newest_result.workload).exists()
     if not has_pipeline_data:
         LOG.debug(
-            "Background tasks haven't ran for this workload yet, picking random data.")
+            "Background tasks haven't ran for this workload yet, picking random data."
+        )
     if not has_pipeline_data or newest_result.session.tuning_session == 'randomly_generate':
         result = Result.objects.filter(pk=result_id)
         knobs = SessionKnob.objects.get_knobs_for_session(
@@ -157,22 +159,27 @@ def aggregate_target_results(result_id):
                                            dbms=newest_result.dbms,
                                            workload=newest_result.workload)
     if len(target_results) == 0:
-        raise Exception('Cannot find any results for session_id={}, dbms_id={}'
-                        .format(newest_result.session, newest_result.dbms))
+        raise Exception(
+            'Cannot find any results for session_id={}, dbms_id={}'.format(
+                newest_result.session, newest_result.dbms))
     agg_data = DataUtil.aggregate_data(target_results)
     agg_data['newest_result_id'] = result_id
     agg_data['bad'] = False
 
     # Clean knob data
-    cleaned_agg_data = clean_knob_data(agg_data['X_matrix'], agg_data['X_columnlabels'],
+    cleaned_agg_data = clean_knob_data(agg_data['X_matrix'],
+                                       agg_data['X_columnlabels'],
                                        newest_result.session)
     agg_data['X_matrix'] = np.array(cleaned_agg_data[0])
     agg_data['X_columnlabels'] = np.array(cleaned_agg_data[1])
-
+    LOG.info("async_tasks.aggregate_target_result execute,"
+             " chain 1 method end,get agg_data")
     return agg_data
 
 
 def gen_random_data(knobs):
+    # to do generating between(min,min(max,handware_max))
+    LOG.info("async_tasks.gen_random_data generate random knob starting")
     random_knob_result = {}
     for knob in knobs:
         name = knob["name"]
@@ -188,31 +195,32 @@ def gen_random_data(knobs):
             rand_idx = random.randint(0, enumvals_len - 1)
             random_knob_result[name] = rand_idx
         elif knob["vartype"] == VarType.INTEGER:
-            random_knob_result[name] = random.randint(
-                int(knob["minval"]), int(knob["maxval"]))
+            random_knob_result[name] = random.randint(int(knob["minval"]),
+                                                      int(knob["maxval"]))
         elif knob["vartype"] == VarType.REAL:
-            random_knob_result[name] = random.uniform(
-                float(knob["minval"]), float(knob["maxval"]))
+            random_knob_result[name] = random.uniform(float(knob["minval"]),
+                                                      float(knob["maxval"]))
         elif knob["vartype"] == VarType.STRING:
             random_knob_result[name] = "None"
         elif knob["vartype"] == VarType.TIMESTAMP:
             random_knob_result[name] = "None"
         else:
-            raise Exception(
-                'Unknown variable type: {}'.format(knob["vartype"]))
-
+            raise Exception('Unknown variable type: {}'.format(
+                knob["vartype"]))
+    LOG.info("async_tasks.gen_random_data generate random knob ending")
     return random_knob_result
 
 
 @task(base=ConfigurationRecommendation, name='configuration_recommendation')
 def configuration_recommendation(target_data):
-    LOG.info('configuration_recommendation called')
+    LOG.info('async_tasks.configuration_recommendation called,chain 3 method')
     latest_pipeline_run = PipelineRun.objects.get_latest()
 
     if target_data['bad'] is True:
         target_data_res = {}
         target_data_res['status'] = 'bad'
-        target_data_res['info'] = 'WARNING: no training data, the config is generated randomly'
+        target_data_res['info'] = ('WARNING: no training data, '
+                                   'the config is generated randomly')
         target_data_res['recommendation'] = target_data['config_recommend']
         return target_data_res
 
@@ -232,9 +240,9 @@ def configuration_recommendation(target_data):
     workload_metric_data = JSONUtil.loads(workload_metric_data.data)
 
     newest_result = Result.objects.get(pk=target_data['newest_result_id'])
-    cleaned_workload_knob_data = clean_knob_data(workload_knob_data["data"],
-                                                 workload_knob_data["columnlabels"],
-                                                 newest_result.session)
+    cleaned_workload_knob_data = clean_knob_data(
+        workload_knob_data["data"], workload_knob_data["columnlabels"],
+        newest_result.session)
 
     X_workload = np.array(cleaned_workload_knob_data[0])
     X_columnlabels = np.array(cleaned_workload_knob_data[1])
@@ -261,26 +269,30 @@ def configuration_recommendation(target_data):
         workload=mapped_workload,
         task_type=PipelineTaskType.RANKED_KNOBS)
     ranked_knobs = JSONUtil.loads(ranked_knobs.data)[:IMPORTANT_KNOB_NUMBER]
-    ranked_knob_idxs = [i for i, cl in enumerate(
-        X_columnlabels) if cl in ranked_knobs]
+    ranked_knob_idxs = [
+        i for i, cl in enumerate(X_columnlabels) if cl in ranked_knobs
+    ]
     X_workload = X_workload[:, ranked_knob_idxs]
     X_target = X_target[:, ranked_knob_idxs]
     X_columnlabels = X_columnlabels[ranked_knob_idxs]
 
-    # Filter ys by current target objective metric
+    # Filter ys by current target objective metric,
     target_objective = newest_result.session.target_objective
-    target_obj_idx = [i for i, cl in enumerate(
-        y_columnlabels) if cl == target_objective]
+    # =======================================target_obj_idx==============
+    target_obj_idx = [
+        i for i, cl in enumerate(y_columnlabels) if cl == target_objective
+    ]
     if len(target_obj_idx) == 0:
         raise Exception(('Could not find target objective in metrics '
                          '(target_obj={})').format(target_objective))
     elif len(target_obj_idx) > 1:
-        raise Exception(('Found {} instances of target objective in '
-                         'metrics (target_obj={})').format(len(target_obj_idx),
-                                                           target_objective))
+        raise Exception(
+            ('Found {} instances of target objective in '
+             'metrics (target_obj={})').format(len(target_obj_idx),
+                                               target_objective))
 
-    metric_meta = MetricCatalog.objects.get_metric_meta(newest_result.session.dbms,
-                                                        newest_result.session.target_objective)
+    metric_meta = MetricCatalog.objects.get_metric_meta(
+        newest_result.session.dbms, newest_result.session.target_objective)
     if metric_meta[target_objective].improvement == '(less is better)':
         lessisbetter = True
     else:
@@ -326,6 +338,7 @@ def configuration_recommendation(target_data):
     # Scale to N(0, 1)
     X_scaler = StandardScaler()
     X_scaled = X_scaler.fit_transform(X_matrix)
+    # y_target.shape[0]这表示的是y_target目标的个数
     if y_target.shape[0] < 5:  # FIXME
         # FIXME (dva): if there are fewer than 5 target results so far
         # then scale the y values (metrics) using the workload's
@@ -349,11 +362,12 @@ def configuration_recommendation(target_data):
             y_scaled = y_workload_scaler.fit_transform(y_target)
 
     # Set up constraint helper
-    constraint_helper = ParamConstraintHelper(scaler=X_scaler,
-                                              encoder=dummy_encoder,
-                                              binary_vars=categorical_info['binary_vars'],
-                                              init_flip_prob=INIT_FLIP_PROB,
-                                              flip_prob_decay=FLIP_PROB_DECAY)
+    constraint_helper = ParamConstraintHelper(
+        scaler=X_scaler,
+        encoder=dummy_encoder,
+        binary_vars=categorical_info['binary_vars'],
+        init_flip_prob=INIT_FLIP_PROB,
+        flip_prob_decay=FLIP_PROB_DECAY)
 
     # FIXME (dva): check if these are good values for the ridge
     # ridge = np.empty(X_scaled.shape[0])
@@ -387,8 +401,9 @@ def configuration_recommendation(target_data):
                     col_max = X_scaler.transform(X_scaler_matrix)[0][i]
         X_min[i] = col_min
         X_max[i] = col_max
-        X_samples[:, i] = np.random.rand(
-            num_samples) * (col_max - col_min) + col_min
+        # X_samples就是生成的在col_min到col_max之间的随机数
+        X_samples[:, i] = np.random.rand(num_samples) * (col_max -
+                                                         col_min) + col_min
 
     # Maximize the throughput, moreisbetter
     # Use gradient descent to minimize -throughput
@@ -400,6 +415,7 @@ def configuration_recommendation(target_data):
         q.put((y_scaled[x][0], x))
 
     i = 0
+    # add bias to use GPRGD
     while i < TOP_NUM_CONFIG:
         try:
             item = q.get_nowait()
@@ -418,7 +434,7 @@ def configuration_recommendation(target_data):
             i = i + 1
         except queue.Empty:
             break
-
+    # 保存模型意义不大，每次需要fit的X_scaled不一样
     model = GPRGD(length_scale=DEFAULT_LENGTH_SCALE,
                   magnitude=DEFAULT_MAGNITUDE,
                   max_train_size=MAX_TRAIN_SIZE,
@@ -443,8 +459,10 @@ def configuration_recommendation(target_data):
     # when we inversely transform the scaled data, the different becomes much larger
     # and cannot be ignored. Here we check the range on the original data
     # directly, and make sure the recommended config lies within the range
+    # inverse_transforms将标注化的数据转换为原始数据
     X_min_inv = X_scaler.inverse_transform(X_min)
     X_max_inv = X_scaler.inverse_transform(X_max)
+    # bestconfig>X_max_inv?best_config:X_max_inv
     best_config = np.minimum(best_config, X_max_inv)
     best_config = np.maximum(best_config, X_min_inv)
 
@@ -454,12 +472,14 @@ def configuration_recommendation(target_data):
     conf_map_res['recommendation'] = conf_map
     conf_map_res['info'] = 'INFO: training data size is {}'.format(
         X_scaled.shape[0])
-    LOG.info("async_tasks.configuration_recommendation conf_map_res= {}".format(
-        conf_map_res))
+    LOG.info(("async_tasks.configuration_recommendation "
+              "return conf_map_res= {}").format(conf_map_res))
+
     return conf_map_res
 
 
 def load_data_helper(filtered_pipeline_data, workload, task_type):
+    # load pipeline data with json format
     pipeline_data = filtered_pipeline_data.get(workload=workload,
                                                task_type=task_type)
     LOG.debug("PIPELINE DATA: %s", str(pipeline_data.data))
@@ -497,8 +517,8 @@ def map_workload(target_data):
     pruned_metric_idxs = None
 
     # Compute workload mapping data for each unique workload
-    unique_workloads = pipeline_data.values_list(
-        'workload', flat=True).distinct()
+    unique_workloads = pipeline_data.values_list('workload',
+                                                 flat=True).distinct()
     assert len(unique_workloads) > 0
     # assert len(unique_workloads) >= 0
     workload_data = {}
@@ -512,14 +532,14 @@ def map_workload(target_data):
             continue
 
         # Load knob & metric data for this workload
-        knob_data = load_data_helper(
-            pipeline_data, unique_workload, PipelineTaskType.KNOB_DATA)
-        knob_data["data"], knob_data["columnlabels"] = clean_knob_data(knob_data["data"],
-                                                                       knob_data["columnlabels"],
-                                                                       newest_result.session)
+        knob_data = load_data_helper(pipeline_data, unique_workload,
+                                     PipelineTaskType.KNOB_DATA)
+        knob_data["data"], knob_data["columnlabels"] = clean_knob_data(
+            knob_data["data"], knob_data["columnlabels"],
+            newest_result.session)
 
-        metric_data = load_data_helper(
-            pipeline_data, unique_workload, PipelineTaskType.METRIC_DATA)
+        metric_data = load_data_helper(pipeline_data, unique_workload,
+                                       PipelineTaskType.METRIC_DATA)
         X_matrix = np.array(knob_data["data"])
         y_matrix = np.array(metric_data["data"])
         rowlabels = np.array(knob_data["rowlabels"])
@@ -532,11 +552,16 @@ def map_workload(target_data):
                 pipeline_data, unique_workload,
                 PipelineTaskType.RANKED_KNOBS)[:IMPORTANT_KNOB_NUMBER]
             global_pruned_metrics = load_data_helper(
-                pipeline_data, unique_workload, PipelineTaskType.PRUNED_METRICS)
-            ranked_knob_idxs = [i for i in range(X_matrix.shape[1]) if X_columnlabels[
-                i] in global_ranked_knobs]
-            pruned_metric_idxs = [i for i in range(y_matrix.shape[1]) if y_columnlabels[
-                i] in global_pruned_metrics]
+                pipeline_data, unique_workload,
+                PipelineTaskType.PRUNED_METRICS)
+            ranked_knob_idxs = [
+                i for i in range(X_matrix.shape[1])
+                if X_columnlabels[i] in global_ranked_knobs
+            ]
+            pruned_metric_idxs = [
+                i for i in range(y_matrix.shape[1])
+                if y_columnlabels[i] in global_pruned_metrics
+            ]
 
             # Filter X & y columnlabels by top ranked_knobs & pruned_metrics
             X_columnlabels = X_columnlabels[ranked_knob_idxs]
@@ -561,10 +586,10 @@ def map_workload(target_data):
     # assert len(workload_data) >= 0
 
     # Stack all X & y matrices for preprocessing
-    Xs = np.vstack([entry['X_matrix']
-                    for entry in list(workload_data.values())])
-    ys = np.vstack([entry['y_matrix']
-                    for entry in list(workload_data.values())])
+    Xs = np.vstack(
+        [entry['X_matrix'] for entry in list(workload_data.values())])
+    ys = np.vstack(
+        [entry['y_matrix'] for entry in list(workload_data.values())])
 
     # Scale the X & y values, then compute the deciles for each column in y
     X_scaler = StandardScaler(copy=False)
@@ -579,7 +604,9 @@ def map_workload(target_data):
     # Filter the target's X & y data by the ranked knobs & pruned metrics.
     X_target = target_data['X_matrix'][:, ranked_knob_idxs]
     y_target = target_data['y_matrix'][:, pruned_metric_idxs]
-
+    LOG.info("async_tasks.map_workload ranked_knob_idxs.shape={},"
+             "pruned_metric_idxs.shape={}".format(X_target.shape,
+                                                  y_target.shape))
     # Now standardize the target's data and bin it by the deciles we just
     # calculated
     X_target = X_scaler.transform(X_target)
@@ -597,6 +624,7 @@ def map_workload(target_data):
             # Using this workload's data, train a Gaussian process model
             # and then predict the performance of each metric for each of
             # the knob configurations attempted so far by the target.
+            # ================== how to save the model and use before data.
             y_col = y_col.reshape(-1, 1)
             model = GPRNP(length_scale=DEFAULT_LENGTH_SCALE,
                           magnitude=DEFAULT_MAGNITUDE,
@@ -608,12 +636,13 @@ def map_workload(target_data):
         # compute the score (i.e., distance) between the target workload
         # and each of the known workloads
         predictions = y_binner.transform(predictions)
-        dists = np.sqrt(np.sum(np.square(
-            np.subtract(predictions, y_target)), axis=1))
+        dists = np.sqrt(
+            np.sum(np.square(np.subtract(predictions, y_target)), axis=1))
         scores[workload_id] = np.mean(dists)
 
     # Find the best (minimum) score
     best_score = np.inf
+    # what is best_workload_id
     best_workload_id = None
     # scores_info = {workload_id: (workload_name, score)}
     scores_info = {}
@@ -624,9 +653,12 @@ def map_workload(target_data):
             best_workload_id = workload_id
             best_workload_name = workload_name
         scores_info[workload_id] = (workload_name, similarity_score)
-    target_data['mapped_workload'] = (
-        best_workload_id, best_workload_name, best_score)
+    target_data['mapped_workload'] = (best_workload_id, best_workload_name,
+                                      best_score)
 
     target_data['scores'] = scores_info
+    LOG.info("async_tasks.map_workload "
+             "get best workload score,return target_data")
     return target_data
-#
+
+

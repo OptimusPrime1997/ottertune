@@ -51,6 +51,10 @@ class PostgresParser(BaseParser):
         return '99th_lat_ms'
         # return 'pg_stat_database.xact_commit'
 
+    @property
+    def mix_target(self):
+        return 'mix_target'
+
     def convert_integer(self, int_value, metadata):
         converted = None
         try:

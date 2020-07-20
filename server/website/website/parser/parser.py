@@ -59,9 +59,17 @@ class Parser():
         return Parser.__utils(dbms_id).convert_dbms_knobs(knobs)
 
     @staticmethod
-    def convert_dbms_metrics(dbms_id, numeric_metrics, observation_time, target_objective=None):
+    def convert_dbms_metrics(dbms_id, numeric_metrics, observation_time,
+                             target_objective=None):
         return Parser.__utils(dbms_id).convert_dbms_metrics(
             numeric_metrics, observation_time, target_objective)
+
+    @staticmethod
+    def my_convert_dbms_metrics(dbms_id, numeric_metrics, observation_time,
+                                session_id,
+                                target_objective=None):
+        return Parser.__utils(dbms_id).my_convert_dbms_metrics(
+            numeric_metrics, observation_time, session_id, target_objective)
 
     @staticmethod
     def parse_dbms_knobs(dbms_id, knobs):

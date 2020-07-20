@@ -95,7 +95,8 @@ class DataUtil(object):
     @staticmethod
     def aggregate_data(results):
         knob_labels = list(JSONUtil.loads(results[0].knob_data.data).keys())
-        metric_labels = list(JSONUtil.loads(results[0].metric_data.data).keys())
+        metric_labels = list(JSONUtil.loads(
+            results[0].metric_data.data).keys())
         X_matrix = np.empty((len(results), len(knob_labels)), dtype=float)
         y_matrix = np.empty((len(results), len(metric_labels)), dtype=float)
         rowlabels = np.empty(len(results), dtype=int)
@@ -109,6 +110,13 @@ class DataUtil(object):
                                                         len(param_data)))
             metric_data = JSONUtil.loads(result.metric_data.data)
             if len(metric_data) != len(metric_labels):
+                # report error, length not equal
+                LOG.info("utils.DataUtil.aggregat_data len(metric_data)={},\n"
+                         "len(metric_labels)={};\n "
+                         "metric_data={},\n metric_labels={}".format(
+                             len(metric_data), len(metric_labels),
+                             metric_data, metric_labels)
+                         )
                 raise Exception(
                     ("Incorrect number of metrics "
                      "(expected={}, actual={})").format(len(metric_labels),
@@ -136,7 +144,8 @@ class DataUtil(object):
             # No duplicate rows
 
             # For consistency, tuple the rowlabels
-            rowlabels = np.array([tuple([x]) for x in rowlabels])  # pylint: disable=bad-builtin,deprecated-lambda
+            rowlabels = np.array([tuple([x]) for x in rowlabels]
+                                 )  # pylint: disable=bad-builtin,deprecated-lambda
             return X_matrix, y_matrix, rowlabels
 
         # Combine duplicate rows
@@ -163,7 +172,8 @@ class DataUtil(object):
         dbms_info = DBMSCatalog.objects.filter(pk=dbms.pk)
 
         if len(dbms_info) == 0:
-            raise Exception("DBMSCatalog cannot find dbms {}".format(dbms.full_name()))
+            raise Exception(
+                "DBMSCatalog cannot find dbms {}".format(dbms.full_name()))
         full_dbms_name = dbms_info[0]
 
         for i, knob_name in enumerate(featured_knobs):
